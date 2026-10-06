@@ -1,28 +1,27 @@
-# ADR-0004: AWS apenas como sandbox temporário de aprendizagem
+# ADR-0004: AWS como sandbox temporário posterior
 
-- **Status:** Accepted with implementation gate
-- **Date:** 2026-10-06
+- **Estado:** opção futura, bloqueada até aceite local e revisão de custo
+- **Data:** 2026-10-06
 
-## Context
+## Contexto
 
-Cloud, containers, redes, observabilidade, secrets, custo e infraestrutura como código fazem parte dos objetivos formativos. Uma implantação pública permanente traz custo e risco que não são necessários para demonstrar esses conceitos.
+Mentoria quer praticar cloud, redes, secrets, observabilidade, custo e infraestrutura como código. Deploy público permanente não é necessário para aceitar MVP.
 
-## Decision
+## Decisão
 
-Planejar um ambiente AWS isolado, efêmero e provisionado por Terraform após o fluxo local estar verificável. Usar somente dados sintéticos, acesso restrito, orçamento revisado, alertas e procedimento de teardown testado. A implementação exige verificar região, disponibilidade, quotas, preço e autoridade da conta imediatamente antes da provisionar. Não é produção nem piloto com usuários reais.
+Depois da demo local, avaliar sandbox AWS efêmero e restrito, provisionado como código, somente com dados sintéticos. Antes de aplicar, confirmar região, serviço, preço/quota atuais, owner/conta, ingress, orçamento, alertas, secrets, backup/restore e teardown. Não é produção nem piloto com equipe real.
 
-## Alternatives considered
+## Alternativas
 
-- **Deploy público permanente:** rejeitado por custo/risco recorrente fora da necessidade de mentoria.
-- **Pular cloud:** rejeitado porque reduz evidência de deploy e operação em ambiente real.
-- **Cluster Kubernetes:** não selecionado para primeira experiência; mais componentes sem requisito para o produto.
+- Cloud desde primeiro slice: mistura problemas de produto e plataforma e atrasa teste local.
+- Deploy público permanente: custo e exposição desnecessários.
+- Kubernetes: não há requisito que justifique cluster no exercício.
+- Pular cloud: possível se tempo/custo não justificarem; trabalho local continua completo.
 
-## Consequences
+## Consequências
 
-- Terraform deve ser revisado, destruir os recursos e checar resíduos billable.
-- Secrets e dados de demonstração seguem política própria; nenhum dado real de CWI/OSF/cliente.
-- Preços, produtos suportados e configurações cloud são variáveis e precisam ser confirmados perto da execução.
+Terraform precisa revisão, destroy e verificação de recursos faturáveis residuais. Conta/produtos/preços mudam; verificar perto da execução. A autorização desta ADR é apenas para planejar, não para criar recursos.
 
-## Revisit when
+## Reavaliar
 
-Surja necessidade explícita de piloto. Exigir responsável, dados permitidos, base de segurança/privacidade, observabilidade, backup/restore, custo aprovado e autorização separada antes de qualquer exposição real.
+Quando MVP local for aceito e houver janela, orçamento e responsável definidos. Exigir plano operacional e revisão antes de provisionar.

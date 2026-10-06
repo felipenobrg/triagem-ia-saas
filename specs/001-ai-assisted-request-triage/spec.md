@@ -1,190 +1,155 @@
 # Spec 001: Triagem assistida de solicitações
 
-- **Status:** Draft for review
-- **Owner:** Product team
-- **Created:** 2026-10-06
-- **Target:** portfolio MVP on synthetic data
-- **Source of truth:** this document defines expected product behavior; `plan.md` defines the proposed implementation.
+- **Estado:** pronta para revisão dos participantes; ainda não aprovada como produto
+- **Data:** 2026-10-06
+- **Alvo:** MVP didático local, com dados sintéticos
+- **Fonte de verdade:** este documento define comportamento. `plan.md` define a abordagem técnica; `tasks.md` rastreia execução.
 
-## 1. Problem
+## 1. Problema e objetivo
 
-Small operations and support teams receive requests in free text. Manual classification consumes time; automatic classification without review can misroute work or invent facts. The product must organize incoming requests and use AI as a reversible suggestion, with clear human control, traceable state, and a manual path when dependencies fail.
+Equipes internas de suporte técnico recebem solicitações em texto livre. Queremos organizar a fila e testar se uma IA consegue sugerir categoria, urgência e resumo sem retirar o controle da pessoa atendente. O produto é um exercício de arquitetura e engenharia para dois desenvolvedores Java: domínio, limites modulares, contratos, consistência, operação assíncrona, IA controlada e entrega ponta a ponta.
 
-## 2. Goals
+O primeiro incremento executável é local, autenticado e sem RAG. Não será usado por equipes reais nem com dados de trabalho.
 
-- Provide a multi-workspace SaaS workflow for intake, triage, review, and request tracking.
-- Preserve original requester text and distinguish it from AI-generated suggestions and human edits.
-- Demonstrate DDD, modularity, lightweight CQRS, transactional outbox, RabbitMQ, idempotency, tests, CI, observability, and a controlled RAG extension.
-- Produce a deployable educational portfolio project using synthetic content and documented trade-offs.
+## 2. Escopo
 
-## 3. Non-goals for the first release
+### Incluído no MVP local
 
-- Use by real operational teams or with personal, confidential, clinical, financial, or employer data.
-- Guaranteeing that AI classification is correct or suitable for safety-critical work.
-- Autonomous approvals, external actions, outbound messaging, or calling client systems.
-- Public self-service signup, billing/subscriptions, marketplace, SSO, or organization directory sync.
-- Microservices, Kubernetes, event sourcing, separate CQRS databases, or exactly-once delivery.
-- RAG over unrestricted internet content, cross-workspace knowledge search, or using retrieval as authorization.
-- MCP tools that mutate requests, run shell/SQL, or take action on behalf of an operator.
+- Workspaces sintéticos, membros, papéis `REQUESTER`, `AGENT` e `ADMIN`.
+- Login OIDC por Keycloak local; cadastro/associação de usuários sem signup público.
+- Solicitação autenticada, fila por workspace, histórico e transições auditadas.
+- Triagem assíncrona com provedor falso por padrão e adaptador opcional OpenAI.
+- Revisão humana obrigatória, classificação manual e caminho de recuperação.
+- PostgreSQL, Flyway, RabbitMQ, outbox própria, inbox/idempotência e retry limitado.
+- API REST documentada, React/TypeScript, Docker Compose e CI.
+- Avaliação inicial com casos inteiramente sintéticos, sem meta de qualidade pré-fixada.
 
-## 4. Actors and roles
+### Fora do MVP
 
-| Actor | Permissions |
+RAG/pgvector, MCP, entrada pública/anônima, anexos, cobrança, notificações externas, integrações de clientes, microserviços, Kubernetes, event sourcing, banco de leitura separado e uso de dados reais. AWS é uma etapa opcional posterior, isolada e temporária, após aceite local e revisão de custo/segurança.
+
+## 3. Atores e autorização
+
+| Papel | Permissões |
 | --- | --- |
-| Workspace administrator | Manage workspace settings, members/roles, intake key, knowledge sources and usage limits; read and manage requests in the workspace |
-| Agent | Read queue and history; review, edit, accept or reject suggestions; update permitted request status |
-| Requester | Submit a request through the workspace's controlled intake form; receives a non-sensitive confirmation reference |
-| Background worker | Process only the workspace and request identifiers carried by an authenticated internal event; no user-wide access |
-| AI provider | Receives only minimized request text and authorized retrieval context for one triage operation; no authority to access the product directly |
+| `REQUESTER` | Criar solicitações e ler somente as próprias solicitações no workspace associado. |
+| `AGENT` | Ler a fila e solicitações do workspace; revisar sugestões; classificar manualmente; avançar estados operacionais válidos. |
+| `ADMIN` | Permissões de agente, mais gerenciar membros, papéis e configuração do workspace. |
+| Worker | Consumir eventos internos e executar somente triagem do workspace/request indicados no evento validado. |
 
-For the educational MVP, workspace and initial administrator provisioning may use a documented seed/bootstrap command. Member management remains inside the workspace boundary. Public intake uses a revocable workspace-specific token, rate limits, validation and no file attachment support.
+Keycloak autentica a identidade. A associação e o papel no workspace são mantidos pela aplicação e consultados em cada operação; claims enviados pelo navegador não concedem acesso. Toda rota de recurso verifica workspace e permissão. Não existe token público de intake.
 
-## 5. Domain language
+## 4. Linguagem do domínio
 
-- **Workspace:** tenant boundary for members, requests, settings, usage and knowledge sources.
-- **Request:** original submission and its lifecycle; retains immutable original text and current operational status.
-- **Triage suggestion:** versioned, untrusted proposal for category, urgency and concise summary.
-- **Review:** human decision to accept, edit-and-accept, or reject a suggestion.
-- **Knowledge source:** workspace-owned document eligible for retrieval after explicit ingestion and validation.
-- **Usage allowance:** workspace-configured bound for AI calls/tokens per time window; not a billing ledger.
-- **Outbox event:** durable record of a domain/application event awaiting broker publication.
+- **Workspace:** limite de isolamento, associação e autorização.
+- **Solicitação:** texto original imutável, estado operacional e histórico.
+- **Triagem:** tentativa de produzir uma sugestão; não é o estado da solicitação.
+- **Sugestão:** categoria, urgência e resumo não confiáveis até revisão humana.
+- **Revisão:** decisão de uma pessoa agente, registrada e vinculada à versão da sugestão.
+- **Outbox:** registro durável da intenção de publicar evento, gravado na transação de negócio.
 
-## 6. Functional requirements
+Categorias iniciais: `ACCESS`, `INCIDENT`, `QUESTION`, `SERVICE_REQUEST`, `OTHER`. Urgências: `LOW`, `NORMAL`, `HIGH`, `CRITICAL`. A sugestão deve ser conservadora: ausência de evidência explícita não autoriza elevar urgência. Não há SLA nem automação operacional baseada nesses valores.
 
-### Workspace and access
+## 5. Requisitos funcionais
 
-- **FR-001 — Workspace isolation:** Every authenticated read/write is authorized against the active workspace. The service derives the allowed workspace from the authenticated membership, never solely from a client-supplied ID.
-- **FR-002 — Roles:** An administrator can invite/remove members and assign administrator or agent role. An agent cannot manage members, intake credentials, usage settings, or knowledge sources.
-- **FR-003 — Intake boundary:** The workspace can enable/disable and rotate a public intake token. Intake validates token, payload size, rate limit, and required fields; it returns an opaque reference and does not reveal whether another workspace's request exists.
+### Identidade, workspace e acesso
 
-### Requests and workflow
+- **FR-001 — Autenticar:** API aceita somente access tokens OIDC válidos emitidos pelo realm local configurado.
+- **FR-002 — Autorizar por membership:** cada operação exige membership ativo e papel permitido no workspace. ID de workspace fornecido pelo cliente é seletor, nunca prova de autorização.
+- **FR-003 — Isolar leitura:** requester vê apenas suas próprias solicitações; agent/admin veem recursos do workspace autorizado. Respostas e filtros não revelam existência de recurso fora do escopo.
+- **FR-004 — Administrar membros:** somente admin pode associar/remover membros e alterar papel. Deve existir pelo menos um admin ativo por workspace.
 
-- **FR-004 — Request creation:** A valid submission stores original text, workspace, creation time, source and a stable request identifier. The original text is immutable; edits are stored separately.
-- **FR-005 — Queue and search:** Authorized agents can list and filter their workspace's requests by status, category, urgency and date, and open a request's history.
-- **FR-006 — State transitions:** Request workflow state and AI processing-attempt state are separate. A request follows `RECEIVED → TRIAGE_PENDING`; a valid suggestion moves it to `NEEDS_REVIEW`; an authorized human approval or manual classification moves it to `OPEN`; an agent may then move it through `IN_PROGRESS → RESOLVED`. A rejected suggestion remains recorded as `REJECTED` and the request stays available for manual classification. An AI attempt failure does not strand the request: it remains accessible for manual classification or retry. Invalid transitions return a conflict and do not mutate state.
-- **FR-007 — Manual operation:** An agent can classify and update a request without AI. The queue remains usable during broker, vector-store, or AI-provider outage.
-- **FR-008 — Audit history:** Material changes record actor or system identity, timestamp, prior and new state, source of change, and relevant correlation ID. Audit history is append-only through application behavior.
+### Solicitações e ciclo de vida
 
-### AI-assisted triage
+- **FR-005 — Criar idempotentemente:** criação exige `Idempotency-Key`. Chave é escopada por subject autenticado, workspace e operação. Repetição com mesmo corpo devolve a mesma confirmação; mesma chave com corpo diferente retorna conflito. Não persistir chave em claro; reter registro por pelo menos 24 horas.
+- **FR-006 — Preservar origem:** corpo original é imutável. Correções são eventos/revisões separados, sem apagar a origem.
+- **FR-007 — Consultar:** agent/admin podem filtrar fila por estado, categoria, urgência e data; requester só lista as próprias solicitações. Detalhe inclui histórico paginado e autorizado.
+- **FR-008 — Transicionar:** estado operacional e tentativa de triagem são separados. Transições inválidas ou sobre versão desatualizada retornam conflito e não alteram dados.
+- **FR-009 — Classificar manualmente:** agent/admin pode encaminhar uma solicitação para `OPEN` sem IA, registrando categoria, urgência, autor e motivo opcional.
+- **FR-010 — Auditar:** registrar ator (pessoa ou sistema), instante, ação, versão, estado anterior/novo e correlation ID. Histórico não é editável pela API comum.
 
-- **FR-009 — Suggestion creation:** For an eligible request, the worker asks a configured triage adapter for `category`, `urgency`, and `summary`, plus a brief rationale when supported. The allowed categories and urgency values are versioned in this spec/API.
-- **FR-010 — Structured validation:** The application validates provider output against a versioned schema, length limits, enumerations, and request/workspace identity. Invalid output is not displayed as a usable suggestion.
-- **FR-011 — Human review:** An agent can accept, edit-and-accept, or reject a suggestion. Only a human review can move an AI-triaged request from `NEEDS_REVIEW` to `OPEN`.
-- **FR-012 — Provider failure:** Timeout, rate limit, malformed output, exhausted allowance, or provider error produces a visible retryable/manual state. The original request remains saved and available; it is never auto-approved or silently dropped.
-- **FR-013 — Usage limits:** The system checks workspace limits before a provider call and records an auditable usage estimate/status. MVP limits are protective caps, not billing or an exact invoice.
-- **FR-014 — Traceability:** Each suggestion stores schema version, prompt version, provider/model identifier when available, timestamps, outcome, and reviewed-by/reviewed-at fields. Do not store hidden chain-of-thought or provider secrets.
+Estados de solicitação:
 
-### Asynchronous processing
+| De | Para | Quem/condição |
+| --- | --- | --- |
+| `RECEIVED` | `TRIAGE_PENDING` | Sistema ao agendar triagem automática |
+| `RECEIVED`, `TRIAGE_PENDING`, `NEEDS_REVIEW` | `OPEN` | Agent/admin por classificação manual |
+| `TRIAGE_PENDING` | `NEEDS_REVIEW` | Sistema após sugestão validada |
+| `NEEDS_REVIEW` | `OPEN` | Agent/admin aprova ou edita e aprova sugestão |
+| `NEEDS_REVIEW` | `RECEIVED` | Agent/admin rejeita sugestão; registrar rejeição e permitir triagem manual |
+| `OPEN` | `IN_PROGRESS` | Agent/admin |
+| `IN_PROGRESS` | `OPEN`, `RESOLVED` | Agent/admin; reabertura exige registro |
 
-- **FR-015 — Durable dispatch:** Request creation and the event that schedules triage are committed atomically in PostgreSQL through an outbox record.
-- **FR-016 — Idempotent consumption:** Repeated delivery of the same event does not create duplicate suggestions or duplicate state changes.
-- **FR-017 — Retry and dead letter:** Transient errors use bounded delayed retry; permanent/poison messages are routed to a dead-letter queue with a correlation ID and safe failure classification. An authorized operator can inspect/replay a failed job through a documented operation.
-- **FR-018 — Delivery semantics:** The product documents at-least-once delivery and eventual completion. It does not claim exactly-once processing.
+Tentativa de triagem: `QUEUED`, `PROCESSING`, `SUCCEEDED`, `RETRY_SCHEDULED`, `FAILED`, `OUTCOME_UNKNOWN`. Timeout após envio ao provedor pode significar que a chamada foi processada: marcar `OUTCOME_UNKNOWN`, não repetir automaticamente chamada potencialmente cobrada. Solicitação permanece utilizável manualmente.
 
-### RAG extension (after core triage)
+### Triagem por IA
 
-- **FR-019 — Knowledge ingestion:** An administrator can add/remove synthetic text/Markdown knowledge sources for the workspace. Ingestion records source, checksum, parser/index version and status.
-- **FR-020 — Workspace-scoped retrieval:** Retrieval filters by authorized workspace before any content is supplied to the model. It returns source identifiers and excerpts for the reviewer to inspect.
-- **FR-021 — Grounded suggestion:** Retrieved content is advisory context, not executable instruction. Suggestions can indicate that no supporting source was found; the model must not invent citations.
-- **FR-022 — Deletion and reindex:** Removing a source prevents future retrieval and schedules deletion of its chunks/embeddings; reindexing is idempotent and versioned.
+- **FR-011 — Produzir sugestão:** solicitar somente categoria, urgência e resumo curto. Não exigir nem armazenar raciocínio privado do modelo.
+- **FR-012 — Validar no servidor:** validar schema, enums, limites de tamanho e estado da solicitação; schema estruturado do provedor não substitui validação de domínio.
+- **FR-013 — Aprovação humana:** modelo não altera estado operacional. Somente agent/admin pode aceitar, editar e aceitar ou rejeitar uma sugestão válida.
+- **FR-014 — Provedor substituível:** domínio depende de uma porta `TriageProvider`. Fake é o padrão local e obrigatório nos testes; chamadas reais são opt-in.
+- **FR-015 — Proteger custo:** OpenAI real exige `OPENAI_LIVE_ENABLED=true`, chave em variável local não versionada e orçamento mensal da aplicação de US$5. Reservar margem/custo máximo antes da chamada, reconciliar uso informado após resposta e bloquear novas chamadas ao atingir o limite. Se o custo não puder ser estimado com segurança, bloquear a chamada. Limite do app não substitui limite configurado na conta do provedor.
+- **FR-016 — Minimizar e rastrear:** enviar apenas texto necessário; guardar provedor/modelo, versões de schema e prompt, uso/custo reportado, tempo, status e correlation ID. Não registrar segredo, prompt completo ou corpo original em logs.
+- **FR-017 — Avaliar baseline:** manter conjunto sintético rotulado por ambos os participantes, divergências reconciliadas e métricas de macro-F1/categoria, matriz de confusão, erro de urgência, schema válido, latência e custo. Apresentar baseline antes de escolher meta; não alegar precisão sem amostra e método.
 
-## 7. Business rules
+### Eventos e entrega
 
-- **BR-001:** Request original text is immutable after intake; corrections are separate revision/audit entries.
-- **BR-002:** An AI suggestion cannot transition a request to `OPEN` without an authenticated human reviewer in that workspace.
-- **BR-003:** No request, member, vector result, file, audit entry or usage record may cross workspace boundaries.
-- **BR-004:** The request row and its outbox event are atomic. Broker publication can be repeated safely.
-- **BR-005:** A valid suggestion belongs to exactly one request and one workspace and records its prompt/schema versions.
-- **BR-006:** A failed AI call must not erase or block manual access to a request.
-- **BR-007:** RAG content and public intake text are untrusted input; neither can override system policy or permission checks.
-- **BR-008:** All demo seeds and evaluation fixtures are synthetic and clearly labeled.
+- **FR-018 — Commit atômico:** persistir solicitação, auditoria necessária e evento outbox na mesma transação PostgreSQL.
+- **FR-019 — Publicar com segurança:** evento persistente, estável e versionado contém IDs/correlation, nunca texto da solicitação. Publicador usa publisher confirms e `mandatory=true`; trata `basic.return` de mensagem não roteável e só marca publicação após confirmação sem retorno.
+- **FR-020 — Consumir idempotentemente:** inbox com unicidade por consumidor/event ID; confirmar RabbitMQ somente após resultado/falha recuperável estar persistido.
+- **FR-021 — Recuperar de falhas:** retries persistidos, limitados e com atraso para erros sabidamente transitórios. Mensagem inválida/poison vai à DLQ. Replay é ação explícita, autorizada, idempotente e auditada. Falha do broker não impede consulta e classificação manual.
+- **FR-022 — Declarar semântica:** documentar entrega at-least-once; não prometer exactly-once. Cobrir crash após chamada de IA e antes de persistir resposta, cuja resolução pode ser `OUTCOME_UNKNOWN`.
 
-## 8. Acceptance scenarios
+## 6. Regras de negócio
 
-### A. Isolate tenant access
+- **BR-001:** workspace e membership ativo são obrigatórios em toda leitura/escrita de negócio.
+- **BR-002:** requester nunca revisa sugestão nem acessa solicitação de outro requester.
+- **BR-003:** texto original, decisão humana e sugestão são registros distintos.
+- **BR-004:** nenhuma sugestão altera fila ou estado sem decisão humana.
+- **BR-005:** cada sugestão e tentativa pertence a um único request/workspace; o modelo não define identidade, workspace ou permissão.
+- **BR-006:** falha de IA/broker/cota não remove a solicitação nem impede classificação manual.
+- **BR-007:** repetição de evento não duplica sugestão, decisão ou auditoria de negócio.
+- **BR-008:** payload de broker não contém texto submetido, segredos ou prompt.
+- **BR-009:** todas as fixtures, avaliações e demos usam dados sintéticos identificados como tais.
 
-**Given** agent A is authenticated only in workspace A and request B belongs to workspace B
-**When** agent A requests, filters, updates, or reviews request B by guessing its identifier
-**Then** the API returns a non-disclosing not-found/forbidden response, creates no audit mutation, and records a safe security signal.
+## 7. Contrato HTTP mínimo
 
-### B. Persist intake despite broker outage
+Detalhamento e envelope de erro em [`api-contract.md`](api-contract.md). Todos os endpoints exigem Bearer OIDC, exceto health checks sem dados de negócio.
 
-**Given** valid intake credentials and PostgreSQL is available while RabbitMQ is unavailable
-**When** a requester submits a valid request
-**Then** the request and outbox event commit together, the requester receives a reference, and the dispatcher publishes the event after the broker recovers without creating a duplicate request.
+- `POST /api/v1/workspaces/{workspaceId}/requests` — criar; exige `Idempotency-Key`.
+- `GET /api/v1/workspaces/{workspaceId}/requests` — fila ou solicitações próprias; paginação por cursor.
+- `GET /api/v1/workspaces/{workspaceId}/requests/{requestId}` — detalhe e histórico autorizado.
+- `POST .../{requestId}/reviews` — aprovar, editar/aprovar ou rejeitar; exige versão esperada.
+- `POST .../{requestId}/manual-classification` — classificar sem IA.
+- `POST .../{requestId}/triage-retries` — reprocesso explícito por agent/admin, apenas quando elegível.
 
-### C. Reject repeated delivery
+## 8. Requisitos de qualidade
 
-**Given** a triage event has been successfully processed
-**When** RabbitMQ redelivers the same event identifier
-**Then** no duplicate suggestion is created and the original result remains addressable.
+- **NFR-001 — Reprodutibilidade:** ambiente local sobe a partir de instruções versionadas, health checks e configuração de exemplo, sem segredo real.
+- **NFR-002 — Isolamento verificável:** testes de autorização negativos cobrem rotas, consultas, eventos e relações de banco multi-workspace.
+- **NFR-003 — Observabilidade:** logs estruturados com request/event/correlation IDs, métricas de idade da outbox, fila, tentativas, falha/custo IA e DLQ; sem conteúdo sensível.
+- **NFR-004 — Concorrência:** alteração de estado usa versão otimista; duas revisões concorrentes não podem ambas vencer.
+- **NFR-005 — Recuperabilidade:** documentar operação de retry/replay, indisponibilidade Rabbit/IA e backup/restauração local; verificar restauração antes de encerrar milestone operacional.
+- **NFR-006 — Avaliação:** medir baseline de IA em dataset sintético versionado; reportar tamanho, método e limitações junto das métricas.
+- **NFR-007 — Modularidade:** dependências entre módulos são verificadas automaticamente; detalhes internos de módulo não são importados por outros módulos.
 
-### D. Require a person to approve
+## 9. Cenários de aceite prioritários
 
-**Given** the AI returns a valid suggestion
-**When** the worker completes triage
-**Then** the request is `NEEDS_REVIEW`; only an authorized agent's explicit accept/edit action moves it to `OPEN`.
+1. **Acesso cruzado:** dado usuário do workspace A, quando pede ID de B em path/filtro/body, então não lê nem altera B e resposta não confirma existência.
+2. **Requester limitado:** dado requester autenticado, quando lista, então vê somente próprias solicitações; tentar revisar/classificar retorna proibido.
+3. **Idempotência:** mesmo subject/workspace/chave/corpo retorna mesmo request; chave/corpo divergente retorna conflito.
+4. **Concorrência:** duas revisões usam mesma versão; uma vence, a outra recebe conflito e não sobrescreve a decisão.
+5. **Outbox:** broker indisponível após commit; solicitação existe e outbox pendente publica após recuperação.
+6. **Roteamento:** publish sem binding recebe retorno e permanece pendente/visível para operação, mesmo se houve publisher confirm.
+7. **Redelivery:** worker cai após commit antes do ack; redelivery não duplica efeito de domínio.
+8. **Falha ambígua de IA:** timeout após envio não dispara retry automático; tentativa fica `OUTCOME_UNKNOWN`, classificação manual funciona.
+9. **Limite de custo:** reserva que excede limite mensal bloqueia provedor real; fake segue disponível.
+10. **Saída inválida:** JSON/schema/enum/limite inválido não vira sugestão revisável.
+11. **Aprovação:** sugestão válida só entra em `OPEN` após decisão de agent/admin e histórico registra ambos os valores.
+12. **Sem dados reais:** fixtures, logs, capturas e avaliação não incluem dados pessoais ou corporativos.
 
-### E. Preserve manual workflow
+## 10. Referências normativas e decisão pendente
 
-**Given** the AI provider times out or produces invalid JSON
-**When** the worker classifies the failure
-**Then** the request and original text remain available, the suggestion is not presented as approved, and an agent can classify it manually or retry it safely.
+Decisões fixadas para esta versão: Keycloak OIDC local; papéis mantidos pela aplicação; entrada autenticada; OpenAI como adaptador opcional com fake padrão e teto US$5/mês; outbox própria; Spring Modulith para verificação; avaliação sem limiar prévio. Não reabrir como tarefa bloqueadora.
 
-### F. Resolve a failed or rejected suggestion manually
-
-**Given** a request is awaiting triage and the AI attempt fails, or its suggestion is rejected
-**When** an authorized agent provides a valid manual classification
-**Then** the request moves to `OPEN`, the AI attempt/rejection stays visible in history, and the manual actor and values are audited.
-
-### G. Enforce tenant-scoped RAG
-
-**Given** workspace A and workspace B each have indexed synthetic knowledge
-**When** triage for A retrieves context
-**Then** every returned chunk belongs to A, even if B contains a closer semantic match; the suggestion contains only citations returned by that authorized query.
-
-### H. Remove a knowledge source
-
-**Given** an administrator removes a workspace knowledge source
-**When** deletion/index cleanup completes
-**Then** subsequent retrieval cannot return its chunks and the source/deletion state is auditable.
-
-### I. Validate legal state transitions
-
-**Given** a request is `RECEIVED`
-**When** a client attempts an unsupported transition directly to `RESOLVED`
-**Then** the operation is rejected without changing state or adding a success audit event.
-
-## 9. Non-functional requirements
-
-- **NFR-001 — Tenant safety:** Automated integration tests prove isolation for every request API and RAG query path. Authorization is deny-by-default.
-- **NFR-002 — Reliability:** The local development environment can demonstrate outbox recovery, duplicate delivery, bounded retry, DLQ inspection and safe replay.
-- **NFR-003 — Responsiveness:** Intake does not wait synchronously for an AI provider. Queue views use pagination and bounded filters. Establish numeric performance targets only after measuring the demo environment.
-- **NFR-004 — Operability:** Every intake, outbox event, queue message, provider attempt, suggestion and audit event can be correlated with a non-sensitive correlation ID.
-- **NFR-005 — Cost control:** Provider calls are bounded by per-request token/size caps and workspace quotas; sandbox cloud resources have documented estimates, budgets/alerts where available, and teardown steps.
-- **NFR-006 — Accessibility:** Essential intake, queue and review workflows are keyboard operable, label form controls, and communicate status/errors without color alone.
-- **NFR-007 — Maintainability:** Core domain rules are unit-testable without a running database, broker, web framework or AI SDK.
-- **NFR-008 — Data minimization:** The demo has no real-user data. Logs exclude raw request text, credentials, prompts containing sensitive data and full model responses by default.
-
-## 10. Initial API sketch (not a frozen contract)
-
-- `POST /api/v1/intake/{publicToken}/requests` — public, rate-limited submission.
-- `GET /api/v1/workspaces/{workspaceId}/requests` — authenticated, paginated, tenant-authorized queue.
-- `GET /api/v1/workspaces/{workspaceId}/requests/{requestId}` — request and permitted history.
-- `POST /api/v1/workspaces/{workspaceId}/requests/{requestId}/reviews` — accept, edit-and-accept or reject.
-- `POST /api/v1/workspaces/{workspaceId}/requests/{requestId}/manual-triage` — manual category/urgency/summary.
-- `POST /api/v1/workspaces/{workspaceId}/requests/{requestId}/retry-triage` — authorized, idempotent requeue.
-
-The implementation plan must settle authentication transport, error envelope, optimistic concurrency and OpenAPI schemas before API code is treated as contract.
-
-## 11. Open questions
-
-- Which identity mechanism should the portfolio MVP use (local OIDC provider vs. managed Cognito in cloud)? Choose one for MVP and document the dev/prod-like boundary.
-- Which provider adapter and model are available for local development and cost-controlled demo? Keep an offline fake adapter for deterministic tests.
-- Does MVP deliver knowledge ingestion/RAG, or is that a second milestone after reliable core triage? Recommended: second milestone.
-- Which exact category/urgency taxonomy supports a convincing synthetic demo without implying a real team's process?
-- Should requester confirmation be only a reference on screen, or should a later version send an email? No outbound messaging in MVP.
-
-## 12. Definition of acceptance
-
-This specification is ready for implementation once open questions that affect architecture are resolved or explicitly marked as assumptions. A release is accepted only when required acceptance scenarios have automated evidence, the documentation reflects actual behavior, and every excluded capability remains off or unavailable.
+Questões a resolver antes de operação além do demo: retenção/exclusão para qualquer eventual piloto, região e orçamento cloud, modelo OpenAI concreto e seu preço atual, limites de texto e paginação com base na avaliação de usabilidade. Não são necessárias para implementar o slice local.

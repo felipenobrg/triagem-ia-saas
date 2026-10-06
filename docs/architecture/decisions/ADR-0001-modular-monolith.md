@@ -1,28 +1,26 @@
-# ADR-0001: Começar com monólito modular
+# ADR-0001: Backend como monólito modular
 
-- **Status:** Accepted for the educational MVP
-- **Date:** 2026-10-06
+- **Estado:** escolhido para MVP; verificar em implementação
+- **Data:** 2026-10-06
 
-## Context
+## Contexto
 
-O produto tem limites conceituais distintos (workspace, requests, triage, messaging e depois knowledge), mas será construído por dois profissionais em uma mentoria e precisa de uma primeira versão observável. Distribuir módulos em serviços desde o início multiplicaria deploy, rede, autorização e operação antes de demonstrar necessidade.
+Dois desenvolvedores constroem produto didático em conjunto. Precisam praticar boundaries, deploy, testes e operação sem criar custos distribuídos antes de comprovar necessidade. Há fluxos assíncronos externos, mas isso não exige separar deploy por domínio.
 
-## Decision
+## Decisão
 
-Construir um único backend deployável em Java/Spring Boot com módulos internos, APIs de aplicação explícitas e dependências dirigidas ao domínio. PostgreSQL é a fonte de verdade. Usar CQRS leve para separar comandos das consultas sem segunda base ou event sourcing.
+Backend Java/Spring em um deploy com módulos `identity`, `requests`, `triage`, `messaging` e `api`, APIs internas explícitas e ownership de dados. PostgreSQL compartilhado como fonte de verdade. Spring Modulith verifica ciclos e acessos internos. Usar CQRS leve para separar comandos e consultas, sem event sourcing ou banco de leitura apartado.
 
-## Alternatives considered
+## Alternativas
 
-- **Microservices por domínio:** rejeitado no MVP por custo operacional e consistência distribuída precoce.
-- **Aplicação sem limites de módulo:** rejeitado por tornar regras e ownership difíceis de demonstrar e refatorar.
-- **Event sourcing:** rejeitado; histórico auditável pode ser obtido com tabela de auditoria/outbox sem tornar cada evento histórico uma fonte de estado.
+- Microserviços: mais rede, deploy, identidade distribuída e consistência sem demanda mensurável.
+- Pacotes sem regras: simples inicialmente, porém mistura ownership e permite dependências acidentais.
+- Event sourcing: não necessário para histórico auditável, que é atendido por registros próprios.
 
-## Consequences
+## Consequências
 
-- Um deploy e transações locais tornam fluxo inicial mais simples.
-- Limites internos precisam de verificações de dependência e testes de arquitetura; uma pasta por si só não cria módulo.
-- Concorrência, escala independente ou ownership distinto podem mais tarde justificar separação; nesse caso demonstrar demanda, contratos, observabilidade, SLOs e custo antes de extrair serviço.
+Um deploy e transações locais simplificam consistência. Limites só são reais se API interna e verificação forem respeitadas. RabbitMQ continua como infraestrutura para trabalho de triagem; não torna cada módulo um serviço.
 
-## Revisit when
+## Reavaliar quando
 
-Um módulo exigir escala ou disponibilidade independente, equipe/ownership separado, isolamento regulatório ou ciclo de deploy incompatível; ou a qualidade dos limites internos se tornar insuficiente mesmo após refatoração.
+Medição mostrar necessidade de escala/isolamento/deploy independente, ou boundary permanecer inadequado após refatoração. Exigir evidência operacional, contratos, custo e ADR nova.

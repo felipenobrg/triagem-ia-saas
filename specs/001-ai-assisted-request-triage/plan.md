@@ -1,135 +1,101 @@
-# Plan 001: Technical approach for assisted request triage
+# Plano técnico — Spec 001
 
-- **Status:** Proposed; implement only after resolving blocking questions in `spec.md`.
-- **Related spec:** [`spec.md`](spec.md)
-- **Architecture records:** [`docs/architecture/decisions/`](../../docs/architecture/decisions/)
+- **Estado:** proposta técnica pronta para revisão; aplicação ainda não existe.
+- **Restrição principal:** entregar vertical slices locais, cada um com comportamento, testes, documentação e demonstração.
+- **Spec:** [`spec.md`](spec.md) · **API:** [`api-contract.md`](api-contract.md) · **Modelo:** [`../../docs/architecture/domain-and-data.md`](../../docs/architecture/domain-and-data.md)
 
-## 1. Design goals
+## 1. Arquitetura alvo do MVP
 
-Make the simplest system that demonstrates production-relevant reasoning: explicit domain boundaries, tenant isolation, transactional state changes, resilient asynchronous work, controlled AI use, observable failure and a verifiable delivery path. Keep the core workflow useful without the AI provider or broker.
+Monólito modular Spring Boot com PostgreSQL como fonte de verdade. Spring Modulith verifica dependências/ciclos entre módulos na build. RabbitMQ executa a triagem lenta, com outbox/inbox próprios porque controlar consistência e redelivery é objetivo de aprendizagem. CQRS é leve: comandos protegem invariantes; consultas otimizam DTOs de fila/detalhe no mesmo banco. Sem event sourcing ou banco de leitura separado.
 
-## 2. Proposed technology baseline
+### Módulos e propriedade
 
-| Layer | Proposed choice | Reason / constraint |
+| Módulo | Responsabilidade / dados próprios | Dependências permitidas |
 | --- | --- | --- |
-| API and worker | Java LTS + Spring Boot | Familiar to both mentees; share domain/application code in one deployable backend |
-| Relational data | PostgreSQL + Flyway | Transactions, constraints, migrations and durable outbox; one source of truth for request state |
-| Vector search | PostgreSQL `pgvector` in the RAG milestone | Keep workspace filtering and transactional context close to domain data; benchmark and test filters before wider use |
-| Broker | RabbitMQ, AMQP | Exercise durable queues, publisher confirms, acknowledgements, redelivery and DLQ; not a system-of-record |
-| Web client | React + TypeScript | Complete request/review workflow and a practical API integration surface |
-| API contract | OpenAPI | Reviewable boundary and generated/client contract tests where useful |
-| Local runtime | Docker Compose | Reproducible API, database, broker and optional fake AI adapter |
-| CI | GitHub Actions | Build, tests, static checks, container build and dependency/security checks |
-| Cloud learning | Temporary AWS sandbox | Learn deployment, network boundaries, secrets, logs/metrics, cost and teardown with synthetic data only |
+| `identity` | Resolver principal autenticado e acesso a workspace/membership/papel | Adaptador OIDC e porta consultada pelos casos de uso |
+| `requests` | Aggregate de solicitação, estados, auditoria, fila e comandos manuais | Porta de autorização; publica intenção de triagem via API local/outbox |
+| `triage` | Tentativas, sugestão, validação, aprovação, orçamento e porta do provedor | `requests` por API pública, não por tabela interna |
+| `messaging` | Outbox, dispatcher Rabbit, inbox, retry, DLQ e métricas | Contratos de evento versionados e casos de uso públicos |
+| `api` | REST, validação de transporte, mapeamento de erros e OpenAPI | APIs públicas de aplicação |
 
-Pin supported runtime/dependency versions when implementation begins. No framework or AWS service in this proposal is yet a deployed or tested dependency.
+Cada módulo guarda internals privados e expõe tipos/casos de uso mínimos. Spring Modulith verifica ausência de ciclos, acesso a internals e dependências pretendidas: [verificação oficial](https://docs.spring.io/spring-modulith/reference/verification.html). Não criar módulo knowledge no MVP.
 
-## 3. Module boundaries
+## 2. Stack e ambiente local
 
-The deployable backend contains these modules. Modules expose application interfaces, not repositories or ORM entities.
+- Java LTS compatível com a versão Spring Boot escolhida na implementação; Maven Wrapper versionado.
+- Spring Boot: Web, Validation, Security OAuth2 Resource Server, Data/JDBC conforme decisão de implementação, Actuator e Spring Modulith.
+- PostgreSQL + Flyway. Restrições e chaves compostas tenant-aware onde apropriado; aplicação continua obrigada a autorizar cada operação.
+- RabbitMQ com exchange/queue duráveis, mensagens persistentes, routing key versionada, DLQ e TTL/parking queue de retry quando viável.
+- Keycloak local via realm importado de fixture sintética; React + TypeScript; Docker Compose; CI com build, testes e verificação de módulos.
+- Configuração `.env.example` sem valores secretos. `.env`, tokens, chaves e dump local ficam ignorados pelo Git.
 
-1. **workspace** — membership, roles, intake configuration and usage policy. Owns workspace access decisions.
-2. **requests** — request aggregate, immutable original text, lifecycle, status transitions, filters and audit history.
-3. **triage** — commands and suggestion lifecycle, provider-neutral triage port, schema validation, usage accounting and review actions.
-4. **knowledge** *(later milestone)* — source lifecycle, parsing, chunking, embeddings, workspace-scoped retrieval and citation assembly.
-5. **messaging** — outbox dispatcher, broker configuration, message envelope, idempotency ledger, retries and DLQ operations.
-6. **identity** — authentication integration and mapping identity claims to workspace memberships; never owns domain authorization alone.
-7. **web/API** — REST controllers, input/output DTOs, OpenAPI, error mapping and authentication middleware.
+Compose sobe PostgreSQL, RabbitMQ, Keycloak, API e UI com health checks e comando/documentação de bootstrap. Configurar OIDC issuer/audience externamente. Spring Resource Server valida assinatura, issuer, expiração e audience; membership/role é consultado pela aplicação e não inferido de claim do navegador.
 
-Allowed direction: web and infrastructure adapters call application use cases; application coordinates domain and ports; domain has no framework, database, broker, UI or provider dependency. `messaging` consumes application commands through explicit ports. Avoid cross-module table access and direct imports of another module's persistence layer.
+## 3. Contratos do domínio e persistência
 
-## 4. Domain model and lightweight CQRS
+Implementar regras de transição como funções explícitas/testáveis do aggregate/caso de uso. Escritas levam `expectedVersion`; uma atualização condicional incrementa versão e impede duas revisões concorrentes. Cada operação de negócio e auditoria correspondente ocorre na mesma transação.
 
-Initial aggregates:
+Esboço lógico, não esquema SQL final:
 
-- `Workspace` protects settings, membership/role operations, intake-token rotation and quota configuration.
-- `Request` protects immutable original text, legal status transitions and link to current triage revision.
-- `TriageSuggestion` is a versioned proposal. Review state and reviewer identity are explicit; provider output cannot mutate request state directly.
-- `KnowledgeSource` is introduced later and owns processing/deletion lifecycle for one workspace.
+- `workspace`, `membership(workspace_id, subject, role, active)`.
+- `request(workspace_id,id,requester_subject,original_text,status,version,created_at,updated_at)`.
+- `request_audit(workspace_id,request_id,actor,action,from_state,to_state,version,correlation_id,created_at,metadata)`.
+- `triage_attempt(workspace_id,id,request_id,attempt_no,status,provider,model,safe_error_code,usage,cost,...)`.
+- `triage_suggestion(workspace_id,id,request_id,attempt_id,schema_version,prompt_version,category,urgency,summary,validation_status,...)`.
+- `triage_review(workspace_id,id,request_id,suggestion_id,reviewer_subject,decision,edited_values,...)`.
+- `idempotency_record(scope_hash,key_hash,request_hash,response_ref,expires_at)`.
+- `outbox_event(event_id,event_type,schema_version,aggregate_id,workspace_id,payload,status,attempts,next_attempt_at,lease_until,...)`.
+- `inbox_event(consumer,event_id,processed_at,result_ref)` unique por `(consumer,event_id)`.
+- `ai_budget_period(period,limit_usd,reserved_usd,reported_usd,blocked)` e `ai_usage` com valores minimizados.
 
-Commands include `SubmitRequest`, `RequestTriage`, `RecordTriageResult`, `ReviewSuggestion`, `ClassifyManually`, `ChangeRequestStatus` and later `IngestKnowledgeSource`. Queries include `GetQueue`, `GetRequestDetails`, `GetRequestHistory` and later `SearchKnowledge`. CQRS here separates intent and read shape in one application and database. Begin with ordinary relational tables and transactions. Do not implement event sourcing, projections in a second store, or a separate read database without a measured requirement.
+Usar FK compostas `(workspace_id, request_id)` em tabelas dependentes para bloquear associação cruzada no banco. A autenticação e autorização continuam no caso de uso. Idempotency hash é calculado sobre canonicalização versionada do request; nunca guardar valor original da chave. Manter dados de request fora do evento e fora dos logs. Definir limites de texto/paginação na primeira implementação e refletir no OpenAPI.
 
-## 5. Transaction and event flow
+## 4. Fluxo assíncrono e falhas
 
-### Request intake
+1. API valida token, membership, papel, payload e `Idempotency-Key`.
+2. Uma transação grava request `RECEIVED`, evento de auditoria, outbox `TriageRequested.v1` e resultado idempotente.
+3. Dispatcher reivindica lote pequeno por lease/lock, publica mensagem persistente com `mandatory=true` e `correlationId`.
+4. Registrar handlers de `basic.return` e publisher confirm. Confirmação sem retorno permite marcar publicado; retorno de não roteável mantém evento pendente com alerta/erro operacional. Não confundir broker confirm com roteamento.
+5. Worker valida envelope/versão, reinspeciona membership/status pelo caso de uso do sistema e obtém lock/idempotência. Faz a chamada de triagem fora da transação de banco.
+6. Ao receber resposta, valida schema e regras e grava tentativa, sugestão ou falha antes do ACK. Inbox e efeito são atômicos no PostgreSQL.
+7. Erro transitório conhecido (p.ex. 429 com retry-after ou indisponibilidade antes de envio) agenda retry limitado com `next_attempt_at`; erro permanente vai a DLQ. Erro de transporte depois do envio, sem saber se provedor concluiu, resulta em `OUTCOME_UNKNOWN`, sem retry automático.
+8. Operador/agent autorizado pode iniciar reprocesso explícito, com aviso de possível duplicação/custo e nova tentativa auditada.
 
-1. Validate size, token, rate limit and allowed fields.
-2. Resolve intake token to one workspace. Never accept arbitrary tenant selection from the body.
-3. In one PostgreSQL transaction insert `Request`, append audit entry, and insert `RequestSubmitted` into `outbox_events` with stable event ID and schema version.
-4. Return an opaque receipt promptly; AI is not called on the request thread.
+O delivery é at-least-once. Há janela inevitável entre efeito externo e persistência local: nenhuma chave de inbox elimina cobrança duplicada do provedor se o processo cair depois da resposta. Por isso timeout ambíguo é tratado como estado, não como retry cego. Retenção, reprocesso e remoção de mensagem devem ser documentados.
 
-### Outbox publisher
+## 5. IA, avaliação e orçamento
 
-- Claim available rows with bounded batches and lease/locking safe for multiple publisher instances.
-- Publish persistent message with stable `eventId`, schema version, workspace/request IDs, occurred-at, correlation ID and trace context. Do not include raw request body.
-- Require RabbitMQ publisher confirm before marking the row published. If confirm is absent/negative, retain for retry.
-- Ensure exchange, routing key, durable queue, dead-letter route and topology declaration are documented as code/config.
-- Monitor oldest pending row and publish failures. Provide safe replay for retained records.
+Interface interna `TriageProvider` retorna objeto limitado: category, urgency, summary. Adapter fake fornece resultados determinísticos e não usa rede. Adapter OpenAI usa API de respostas com saída estruturada/JSON Schema estrito quando habilitado; o servidor valida domínio/schema mesmo assim. Referência de formato: [Structured Outputs (OpenAI)](https://developers.openai.com/api/docs/guides/structured-outputs).
 
-### Triage worker
+Configuração live exige `OPENAI_LIVE_ENABLED=true`, `OPENAI_API_KEY`, `OPENAI_MODEL` fixado explicitamente e uso de dados sintéticos. Teto didático: US$5/mês no contador do app. Para chamadas concorrentes, reservar custo conservador antes do envio com preço e tokens máximos configurados, impedir overspend, reconciliar uso/custo reportado depois; parada fechada se preço/modelo não estiver configurado. Configurar também limite de gasto no projeto OpenAI. Fake fica como opção padrão em dev/CI.
 
-- Acknowledge only after result/failure state is durably committed.
-- Use a unique constraint/idempotency record keyed by event ID and operation type. A redelivery returns the prior outcome rather than generating a new suggestion.
-- Fetch request through workspace-aware application service. Event IDs are references, not authorization.
-- For transient provider/network errors: bounded exponential delay with jitter, then DLQ. For invalid schema/policy/permanent input: record classified failure and do not retry indefinitely.
-- A poison message in DLQ is visible to a safe operator workflow; replay reuses request/event identity with an explicit replay record.
+Dataset inicial versionado em formato sem dados pessoais. Dois rótulos independentes e adjudicação documentada; separar exemplos de desenvolvimento e avaliação. Reportar macro-F1 e matriz por categoria, urgência (erro ordinal e matriz), schema-valid rate, latência e custo por item. Sumarização recebe rubric factual com amostra revisada manualmente. Resultado inicial vira baseline; só depois discutir limiar útil ao objetivo didático. Sem alegar que benchmark sintético prova desempenho em operação real.
 
-Expected delivery is at least once. There is a crash window after provider success and before result commit; idempotency limits duplicate state writes, while provider request idempotency is used only if supported. Avoid claiming exactly-once external inference.
+## 6. Segurança e observabilidade
 
-## 6. AI adapter and RAG boundary
+- `workspaceId` vem de rota, mas membership ativo é a prova de autorização. Toda query por ID filtra workspace; retorno para não autorizado não enumera.
+- Não aceitar role/workspace claims como autorização. Não persistir access tokens.
+- Segredos via env local ignorada/secret store temporário, jamais source, frontend ou log.
+- Não logar texto original, prompt completo ou output integral; IDs aleatórios, estado, erro seguro, tamanhos, latência, custo e correlation.
+- Métricas: backlog/idade outbox; returned/unroutable; publish confirm; redelivery; tempo de fila/processamento; tentativas, unknown, DLQ; cota reservada/consumida; taxa de schema válido.
+- Logs e métricas não carregam workspace name ou conteúdo livre; usar IDs técnicos com retenção curta.
 
-`TriageProvider` accepts a minimized, schema-defined input and returns an untrusted value object. `TriageApplicationService` owns quota check, provider timeout, schema validation, persistence and state transition. A `FakeTriageProvider` supplies deterministic local scenarios. A real adapter is configured only in an explicit sandbox and never required for tests.
+## 7. Entrega colaborativa e sequência didática
 
-Prompt input includes only original request text and, after the RAG milestone, approved workspace-local excerpts. Provider response is parsed into a strict schema with category/urgency allowlists and summary/rationale lengths. Validate that outputs cannot set `workspaceId`, permissions, approval or workflow status. Version prompts and schemas; collect latency, outcome and token/cost estimates without raw text.
+Trabalhar em fatias verticais. Em cada fatia, definir driver e reviewer; alternar a cada incremento. Os dois implementam e revisam backend e frontend ao longo do projeto, com ao menos uma autoria e uma revisão de PR em cada camada por pessoa. O driver apresenta requisito, trade-off, evidência de teste e limitação; reviewer registra riscos e alternativa. PR identifica os requisitos e autoria individual sem trailer de coautoria.
 
-RAG milestone stages: (1) synthetic knowledge fixtures and evaluation set; (2) source upload/import limited to small Markdown/text files; (3) parse and chunk with source, checksum, workspace and version metadata; (4) embed and store vectors; (5) query with mandatory workspace predicate, bounded `topK` and similarity threshold; (6) attach source IDs/excerpts; (7) evaluate retrieval relevance, citation correctness, cross-tenant leakage and deletion; (8) enable only if results beat a documented baseline. Retrieval is advisory; it does not expand user permissions. Treat retrieved prompt-injection text as untrusted data.
+Sequência de aprendizagem: linguagem/invariantes e estados → boundaries/DDD → API e idempotência → OIDC/tenant → transação/concorrência → outbox/eventos/Rabbit/retry → adaptador IA/orçamento/avaliação → observabilidade, threat model e demo. DDD começa em linguagem ubíqua, bounded contexts e invariantes; CQRS separa intenção de alteração e leitura, sem impor complexidade de infraestrutura.
 
-## 7. Security, identity and tenancy
+## 8. Extensões futuras, separadas por especificação
 
-- Authentication creates an identity principal; a membership service resolves allowed workspace and role for each operation.
-- API authorization and data access both scope by tenant. Repository methods require workspace ID; tests attempt guessed IDs and filters.
-- Public intake token is hashed at rest, revocable, rate-limited, scoped to a single workspace and excluded from logs/URLs in telemetry. Prefer header over path if operational tooling permits; settle exact route in OpenAPI design.
-- Use explicit CORS, CSRF strategy if cookie auth, secure headers, request-size limits, validation, brute-force controls and secrets management.
-- For PostgreSQL, consider row-level security as defense in depth only after transaction/session context and connection pooling are proven; it does not replace application authorization or negative tests.
-- Security events use correlation ID, actor/workspace IDs where safe, event type and outcome; do not log raw body, prompts, access tokens or full model output.
+- **RAG:** somente após baseline sem retrieval. Nova spec deve cobrir corpus sintético, ingestão/reindex/deleção, filtro tenant antes da busca, referências verificáveis, prompt injection e métricas de retrieval/grounding. Pode então avaliar pgvector.
+- **MCP:** spec própria, opcional, read-only inicialmente, usuário OIDC propagado, workspace autorizado em toda ferramenta, limites, audit e sem SQL/shell.
+- **AWS:** sandbox temporário após demo local aceita; Terraform, orçamento revisto no dia, ingress restrito, secrets, alertas, backup/restore e teardown verificado. Sem dados reais/piloto.
 
-## 8. API and UI
+## Fontes técnicas
 
-REST resources keep client inputs separate from persistence models. Version the API at `/api/v1`. Use consistent problem/error envelope with stable machine code, safe message and correlation ID. State changes include expected version/ETag or equivalent optimistic concurrency to prevent reviewers overwriting one another. Paginate queue results and make sorting/filtering allowlisted.
-
-UI workflow: sign in → select/current workspace → queue and filters → request detail with original content and history → separate AI suggestion with sources/status → accept, edit-and-accept, reject, manual classify → subsequent status. Visual labeling distinguishes requester text, retrieved excerpts, provider suggestion and human-edited value. Show a recoverable pending/failure state; never use color alone for urgency/status.
-
-## 9. Quality and test strategy
-
-- **Domain unit tests:** state machine, allowed transitions, immutable original, role decisions, quota rules and review requirements.
-- **Application tests:** use case orchestration, transaction boundaries, idempotency decisions and provider failures with fakes.
-- **Integration tests:** PostgreSQL/Flyway constraints, outbox transaction, publisher confirm behavior, RabbitMQ redelivery/DLQ and `pgvector` tenant filtering (later).
-- **API contract tests:** OpenAPI validation, auth/error envelope, pagination and cross-tenant negative cases.
-- **Frontend tests:** intake validation, request states, keyboard review, suggestion distinction and error/manual fallback.
-- **End-to-end:** synthetic request through outbox → broker → fake provider → review → queue state; broker/provider offline path; replay behavior.
-- **Security checks:** secret scanning, dependency review, container scanning where available, input-size abuse and tenant boundary tests.
-- **Resilience experiments:** stop RabbitMQ, kill worker between delivery and acknowledgement, inject duplicate delivery, timeout provider and restore broker. Record expected state and telemetry.
-
-## 10. Observability and operations
-
-Structured logs include event/request/workspace correlation IDs, module, outcome and latency, but omit raw text. Metrics include intake accepted/rejected, outbox age/size, publish confirms/failures, queue depth/age, retry/DLQ counts, worker duration, provider latency/error/quota, validation failure, RAG retrieval count/no-source and cost estimate. Never label metrics with unbounded request IDs or raw user text.
-
-Readiness checks distinguish API, database and broker health. Liveness must not fail merely because an optional AI provider is down. Document startup order, migration behavior, backup/restore rehearsal, DLQ replay, incident examples and teardown. For the AWS learning environment, use separate sandbox config, minimum IAM, secret store, budget/alerts, synthetic fixtures and destroy procedure.
-
-## 11. Cloud and deployment progression
-
-1. Run all dependencies locally in Docker Compose.
-2. Build immutable API and worker container images and run them locally.
-3. Deploy a temporary AWS sandbox from Terraform: ECS Fargate API and worker, PostgreSQL/RDS with vector extension if supported by selected version, managed RabbitMQ/Amazon MQ only if account quotas/cost allow, S3 only for later source ingestion, Secrets Manager, CloudWatch and restricted network paths.
-4. Use synthetic data, no custom production domain, controlled access, explicit teardown and a review of incurred cost.
-5. Only discuss a real pilot after separate authorization, data review, threat model, restore test, operating budget and formal owner approval.
-
-The AWS selection is an educational assumption; specific service availability, pricing, account permissions, quotas and regional support must be checked when implementing. MCP has no role in first deployment.
-
-## 12. MCP extension (post-MVP, optional)
-
-If an MCP server is added, host it as a separately authenticated adapter over application use cases, not direct database access. Begin with one read-only tool such as `search_requests` or `get_request_summary`; require user/workspace authorization on every invocation, bounded filters/results, safe output minimization, rate limits and audit logs. No provider prompt or tool argument can choose an arbitrary tenant. Add negative tests for cross-workspace search and prompt-injected request content. Keep MCP disabled if identity propagation cannot be demonstrated.
-
-## 13. Delivery sequence
-
-Follow task groups in `tasks.md`: repository/tooling and domain; workspace security; request/API/UI; outbox/RabbitMQ; triage adapter/human review; end-to-end reliability; RAG evaluation; temporary cloud sandbox; optional MCP. A group does not start merely because its technology is interesting: its prerequisites and earlier acceptance evidence must pass.
+- [Spring Modulith — Verifying Application Modules](https://docs.spring.io/spring-modulith/reference/verification.html)
+- [RabbitMQ — Publisher Confirms and Returns](https://www.rabbitmq.com/docs/publishers)
+- [OpenAI — Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+- [Spring Security — OAuth 2.0 Resource Server JWT](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html)
+- [Keycloak — Getting Started with Docker](https://www.keycloak.org/getting-started/getting-started-docker)

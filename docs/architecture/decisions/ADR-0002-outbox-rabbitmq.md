@@ -1,30 +1,29 @@
-# ADR-0002: Outbox transacional com RabbitMQ para triagem
+# ADR-0002: Outbox transacional e RabbitMQ
 
-- **Status:** Accepted for the educational MVP
-- **Date:** 2026-10-06
+- **Estado:** escolhido para MVP didático; confirmar operação em testes
+- **Data:** 2026-10-06
 
-## Context
+## Contexto
 
-Classificação por IA tem latência e falhas externas. A submissão deve ser rápida e durável; request e intenção de triagem não podem divergir se o processo cair entre commit no banco e publish.
+Triagem pode ser lenta e depende de serviço externo. Commit do pedido e intenção de processá-lo não podem divergir. O projeto também pretende ensinar mensageria, redelivery e recuperação, mantendo um único backend.
 
-## Decision
+## Decisão
 
-Gravar request e outbox event na mesma transação PostgreSQL. Um dispatcher publica evento persistente em RabbitMQ e marca como publicado após publisher confirm. Worker processa com chave idempotente, persiste sugestão/falha e só então confirma a mensagem. Usar retries limitados, dead-letter queue, correlation IDs e replay auditado. Garantia esperada: at-least-once; consumidores idempotentes.
+Persistir request, audit e outbox na mesma transação PostgreSQL. Dispatcher com lease publica mensagem persistente e versionada, com IDs/correlation apenas. Usar publisher confirm e `mandatory=true`; tratar `basic.return` porque broker confirm não prova roteabilidade. Marcar como publicado só após confirm sem retorno. Worker usa inbox/event ID idempotente, grava resultado antes de ACK e classifica falhas. Retry limitado e agendado; poison vai a DLQ. Entrega é at-least-once.
 
-## Alternatives considered
+Timeout depois do envio a provedor, sem saber se inferência completou, vira `OUTCOME_UNKNOWN`; não repetir automaticamente uma chamada potencialmente cobrada. Reprocesso é explícito, autorizado e auditado.
 
-- **Chamada síncrona ao provedor na requisição:** rejeitada por acoplar disponibilidade/latência da IA à intake.
-- **Publicar direto no broker depois do commit:** rejeitada porque crash entre as operações pode perder evento.
-- **Kafka/streaming platform:** não selecionada; exige mais operação e não há necessidade de replay/stream throughput demonstrada.
-- **Polling só na tabela de requests:** possível simplificação, mas reduz oportunidade de praticar broker e controle explícito de entrega, que são objetivos deste projeto.
+## Alternativas
 
-## Consequences
+- Chamada síncrona no request: acopla intake à latência/disponibilidade IA.
+- Publicar após commit sem outbox: janela de perda entre banco e broker.
+- Polling só na tabela: possível simplificação futura; Rabbit agrega valor didático explícito nesta mentoria.
+- Kafka: operação maior sem necessidade de streaming/replay em escala demonstrada.
 
-- Introduz eventual consistency, dispatcher, broker topology, retry e DLQ que precisam ser observados e operados.
-- Outbox cresce se publicação parar; alertar por idade/quantidade e documentar retenção.
-- Publisher confirm evita marcar mensagem não aceita como publicada, mas não torna provider inference exactly-once.
-- O produto deve permanecer utilizável via triagem manual quando o worker/broker/provider parar.
+## Consequências
 
-## Revisit when
+Mais componentes, eventual consistency e operação de backlog, returns, retries e DLQ. Idempotência não torna efeito externo exactly-once. Caminho manual preserva utilidade se dependência parar.
 
-Métricas mostrarem que um job runner simples seria mais adequado, ou custo/complexidade do RabbitMQ superar o valor didático e operacional. Reavaliar broker conforme necessidade e não apenas popularidade.
+## Referência e revisão
+
+[RabbitMQ: publisher confirms e returns](https://www.rabbitmq.com/docs/publishers). Reavaliar se testes e operação mostrarem job runner mais simples suficiente ou se esforço de broker impedir aprendizado do domínio.
