@@ -61,7 +61,7 @@ For the educational MVP, workspace and initial administrator provisioning may us
 
 - **FR-004 — Request creation:** A valid submission stores original text, workspace, creation time, source and a stable request identifier. The original text is immutable; edits are stored separately.
 - **FR-005 — Queue and search:** Authorized agents can list and filter their workspace's requests by status, category, urgency and date, and open a request's history.
-- **FR-006 — State transitions:** A request follows explicit valid transitions: `RECEIVED → TRIAGE_PENDING → NEEDS_REVIEW → OPEN → IN_PROGRESS → RESOLVED`; a reviewer can mark a suggestion `REJECTED`, leaving the request eligible for manual triage. Invalid transitions return a conflict and do not mutate state.
+- **FR-006 — State transitions:** Request workflow state and AI processing-attempt state are separate. A request follows `RECEIVED → TRIAGE_PENDING`; a valid suggestion moves it to `NEEDS_REVIEW`; an authorized human approval or manual classification moves it to `OPEN`; an agent may then move it through `IN_PROGRESS → RESOLVED`. A rejected suggestion remains recorded as `REJECTED` and the request stays available for manual classification. An AI attempt failure does not strand the request: it remains accessible for manual classification or retry. Invalid transitions return a conflict and do not mutate state.
 - **FR-007 — Manual operation:** An agent can classify and update a request without AI. The queue remains usable during broker, vector-store, or AI-provider outage.
 - **FR-008 — Audit history:** Material changes record actor or system identity, timestamp, prior and new state, source of change, and relevant correlation ID. Audit history is append-only through application behavior.
 
@@ -131,19 +131,25 @@ For the educational MVP, workspace and initial administrator provisioning may us
 **When** the worker classifies the failure
 **Then** the request and original text remain available, the suggestion is not presented as approved, and an agent can classify it manually or retry it safely.
 
-### F. Enforce tenant-scoped RAG
+### F. Resolve a failed or rejected suggestion manually
+
+**Given** a request is awaiting triage and the AI attempt fails, or its suggestion is rejected
+**When** an authorized agent provides a valid manual classification
+**Then** the request moves to `OPEN`, the AI attempt/rejection stays visible in history, and the manual actor and values are audited.
+
+### G. Enforce tenant-scoped RAG
 
 **Given** workspace A and workspace B each have indexed synthetic knowledge
 **When** triage for A retrieves context
 **Then** every returned chunk belongs to A, even if B contains a closer semantic match; the suggestion contains only citations returned by that authorized query.
 
-### G. Remove a knowledge source
+### H. Remove a knowledge source
 
 **Given** an administrator removes a workspace knowledge source
 **When** deletion/index cleanup completes
 **Then** subsequent retrieval cannot return its chunks and the source/deletion state is auditable.
 
-### H. Validate legal state transitions
+### I. Validate legal state transitions
 
 **Given** a request is `RECEIVED`
 **When** a client attempts an unsupported transition directly to `RESOLVED`

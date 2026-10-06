@@ -24,7 +24,7 @@ Raiz: `Workspace`. Membros e configurações pertencem a um workspace. Invariant
 
 Raiz: `Request`. Campos conceituais: `requestId`, `workspaceId`, `originalText`, `submittedAt`, `source`, `status`, `version` e referências à triagem atual. O texto original não muda; correções e complementos viram revisões/audit events. Atualizações de estado verificam a versão para impedir lost update.
 
-Invariantes: a solicitação pertence a um único workspace; só transições permitidas são aceitas; toda mudança material gera audit entry; uma sugestão pendente não é equivalente a uma solicitação aprovada; a origem pública não confere identidade de agente.
+Invariantes: a solicitação pertence a um único workspace; só transições permitidas são aceitas; toda mudança material gera audit entry; uma sugestão pendente não é equivalente a uma solicitação aprovada; a origem pública não confere identidade de agente. Estado do workflow da solicitação (`RECEIVED`, `TRIAGE_PENDING`, `NEEDS_REVIEW`, `OPEN`, `IN_PROGRESS`, `RESOLVED`) é separado do estado da tentativa de IA. Falha ou rejeição deixa a solicitação disponível para retry ou classificação manual; uma classificação manual autorizada pode levá-la a `OPEN` e precisa registrar o ator humano.
 
 ### TriageSuggestion
 
