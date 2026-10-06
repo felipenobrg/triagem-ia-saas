@@ -1,76 +1,72 @@
 # Triagem Inteligente
 
-SaaS de triagem assistida de solicitações para equipes de atendimento e operação. A pessoa envia um pedido em texto; o sistema preserva a mensagem, sugere categoria, urgência e resumo com apoio de IA e aguarda revisão humana antes de criar ou atualizar um chamado na fila.
+Projeto de mentoria para desenhar e construir, em dupla, um SaaS didático de triagem de solicitações técnicas com IA assistiva. O recorte permite praticar Java/Spring, arquitetura de software, React/TypeScript, segurança multi-tenant, mensageria e operação.
 
-> **Estado:** especificação e arquitetura inicial. A aplicação ainda não foi implementada. Requisitos, diagramas e decisões neste repositório são a fonte de verdade para o desenvolvimento.
+> **Estado atual:** repositório documental. A aplicação ainda não foi implementada. A spec e as ADRs descrevem o alvo proposto; não significam que as capacidades já existem.
 
-## Problema e proposta
+## Produto em uma frase
 
-Solicitações chegam por canais e formatos diferentes. A equipe precisa entender o pedido, classificá-lo e encaminhá-lo sem perder o contexto nem deixar uma sugestão automática agir como decisão final. O produto propõe uma caixa de entrada por equipe, histórico auditável e triagem assistida, com entrada manual disponível quando a IA ou a infraestrutura estiver indisponível.
+Uma pessoa autenticada envia uma solicitação técnica ao workspace. O sistema registra o pedido, tenta sugerir categoria, urgência e resumo, e só encaminha à fila depois que uma pessoa agente revisa. Se RabbitMQ ou IA falhar, a solicitação continua disponível para classificação manual.
 
-### Fluxo principal
+## Primeiro slice executável
 
-1. Uma pessoa autenticada registra uma solicitação em um workspace.
-2. A transação grava a solicitação e um evento na tabela outbox.
-3. Um publicador entrega o evento ao RabbitMQ; um worker processa a triagem de forma idempotente.
-4. O serviço recupera somente documentos autorizados daquele workspace quando RAG estiver habilitado e envia contexto mínimo ao adaptador de IA.
-5. A resposta estruturada é validada, associada ao pedido e apresentada como rascunho.
-6. Um atendente aceita, edita ou rejeita a sugestão. A aprovação humana é necessária para encaminhar à fila operacional.
-7. A equipe acompanha estado, histórico, tentativas e falhas. Se o processamento falhar, o pedido permanece disponível para triagem manual.
+1. Login local via Keycloak OIDC; associação e papéis verificados pelo backend.
+2. Requester cria solicitação idempotente e vê apenas as próprias.
+3. Agent/admin vê fila do workspace, histórico e faz triagem manual ou revisa sugestão.
+4. PostgreSQL grava estado e outbox atomicamente; dispatcher entrega evento persistente ao RabbitMQ.
+5. Worker idempotente usa provedor fake por padrão. OpenAI é opt-in, com dados sintéticos e teto de aplicação de US$5/mês.
+6. Sugestão validada permanece rascunho até decisão humana.
 
-## Como tratar este projeto
+MVP é local, sem RAG, MCP, intake público ou dado real. AWS é uma extensão temporária posterior e não faz parte do aceite local.
 
-Este repositório segue desenvolvimento orientado por especificações (*spec-driven development*). A especificação aprovada descreve o comportamento esperado; o plano traduz os requisitos em arquitetura; as tarefas pequenas orientam a implementação. Código, testes e decisões devem apontar para os identificadores de requisito que atendem.
+## Como este projeto é desenvolvido
 
-Antes de implementar uma funcionalidade:
+Usamos *spec-driven development*: primeiro comportamento e critérios observáveis; depois arquitetura e decisões; então tarefas rastreáveis e implementação. Para cada mudança:
 
-1. Leia a [constituição do projeto](.specify/memory/constitution.md) e a especificação ativa.
-2. Esclareça termos, limites, riscos e critérios de aceite ainda ambíguos.
-3. Atualize a especificação com cenários observáveis e requisitos identificados (`FR-*`, `NFR-*`).
-4. Registre a abordagem técnica e os trade-offs no plano ou em uma ADR.
-5. Divida a abordagem em tarefas pequenas, testáveis e rastreáveis.
-6. Implemente testes junto do comportamento. Abra PR com os IDs atendidos e evidências.
-7. Atualize especificação, arquitetura e estado das tarefas quando o comportamento ou a decisão mudar.
+1. Leia [AGENTS.md](AGENTS.md), a [constituição](.specify/memory/constitution.md) e a spec correspondente.
+2. Atualize requisitos (`FR-*`, `BR-*`, `NFR-*`) e cenários antes de alterar comportamento.
+3. Atualize o plano e crie/ajuste ADR se houver mudança de dependência, consistência, segurança, custo ou deployment.
+4. Quebre em uma fatia vertical pequena. PR aponta requisito, tarefa, evidência, riscos e limitações.
+5. Alterne driver/reviewer entre Guilherme e Luis. Ambos devem implementar e revisar backend e frontend ao longo do produto; cada PR tem autoria individual clara.
+6. Atualize docs e tarefas junto ao comportamento implementado. Não marque requisito como entregue antes da evidência.
 
-Não implemente comportamento relevante que contradiga a especificação. Se código, teste e especificação discordarem, pare a mudança e reconcilie os três. Não use termos como “pronto”, “seguro” ou “suportado” sem evidência correspondente.
-
-## Documentação
-
-| Documento | Para que serve |
-| --- | --- |
-| [Constituição](.specify/memory/constitution.md) | Princípios que toda especificação e implementação deve cumprir |
-| [Especificação do produto](specs/001-ai-assisted-request-triage/spec.md) | Escopo, atores, requisitos e critérios de aceite |
-| [Plano técnico](specs/001-ai-assisted-request-triage/plan.md) | Componentes, módulos, fluxo assíncrono, RAG e implantação |
-| [Tarefas](specs/001-ai-assisted-request-triage/tasks.md) | Sequência proposta de entregas e critérios de conclusão |
-| [Modelo de domínio e dados](docs/architecture/domain-and-data.md) | Contextos, agregados, entidades, invariantes e consultas |
-| [Segurança e privacidade](docs/security/threat-model.md) | Limites de confiança, ameaças e controles obrigatórios |
-| [ADRs](docs/architecture/decisions/) | Decisões arquiteturais registradas com contexto e consequências |
+No início de cada sessão de mentoria, escolham uma tarefa que caiba entre os dois encontros mensais. No encontro seguinte, a dupla demonstra código, decisão, teste e uma falha tratada. O objetivo é aprender a defender trade-offs tecnicamente e produzir evidência concreta para portfólio.
 
 ## Arquitetura proposta
 
-- **Backend:** Java LTS e Spring Boot, organizado como monólito modular.
-- **Persistência:** PostgreSQL com migrações Flyway; `pgvector` somente para a etapa de busca semântica.
-- **API:** REST documentada com OpenAPI; autenticação e autorização por workspace.
-- **Mensageria:** RabbitMQ para trabalho assíncrono; outbox transacional, confirmação de publicação, consumidores idempotentes, retry limitado e dead-letter queue.
-- **Frontend:** React e TypeScript, integrado à API por contrato documentado.
-- **Execução local:** Docker Compose com aplicação, banco e broker; CI executa build, testes e verificações estáticas.
-- **IA:** adaptador substituível, resposta JSON validada por schema e revisão humana obrigatória.
-- **RAG:** busca restrita ao workspace, fontes rastreáveis e avaliação por conjunto sintético antes de habilitar.
-- **Cloud didática:** ambiente AWS temporário para aprender deploy, observabilidade, custo e teardown. Não é alvo de produção.
-- **MCP:** extensão opcional posterior; ferramentas autenticadas, escopadas por workspace e somente de leitura na primeira versão.
+- Monólito modular Spring Boot; Spring Modulith verifica limites e dependências.
+- Módulos: identity, requests, triage, messaging e API.
+- PostgreSQL/Flyway como fonte de verdade; CQRS leve no mesmo banco.
+- RabbitMQ para triagem assíncrona; outbox/inbox próprias, publicação confirmada e roteabilidade verificada, consumidores idempotentes, retry limitado e DLQ.
+- React + TypeScript; OpenAPI como contrato da API.
+- Keycloak local para OIDC; membership/role mantidos e autorizados pela aplicação.
+- Porta de IA substituível, fake default e adaptador OpenAI opt-in.
+- Docker Compose e CI reproduzíveis.
 
-O início é um monólito modular com um banco. A fila existe para desacoplar e controlar trabalho lento de IA, não para converter cada módulo em serviço. Separação em serviços só será considerada após evidência de necessidade operacional ou organizacional e uma decisão registrada.
+DDD é aplicado para linguagem, limites e invariantes. Eventos representam integração e não implicam event sourcing. RAG e MCP só entram com novas specs após evidência de valor e controles definidos.
 
-## Limites do primeiro release
+## Documentação
 
-O MVP demonstra workspace e papéis, cadastro e fila de solicitações, sugestão de triagem, aprovação humana, histórico, operação manual sem IA, testes, pipeline e uma implantação didática temporária. RAG, cobrança real, envio de mensagens, integrações externas, MCP com escrita, alta disponibilidade e uso com equipes/dados reais ficam fora do primeiro release.
+| Documento | Uso |
+| --- | --- |
+| [Spec 001](specs/001-ai-assisted-request-triage/spec.md) | Escopo, atores, regras, requisitos e aceite |
+| [Contrato HTTP](specs/001-ai-assisted-request-triage/api-contract.md) | Rotas, autorização, idempotência, erros e evento |
+| [Plano técnico](specs/001-ai-assisted-request-triage/plan.md) | Módulos, stack, dados, mensageria, IA e segurança |
+| [Tarefas](specs/001-ai-assisted-request-triage/tasks.md) | Milestones e rastreabilidade de implementação |
+| [Domínio e dados](docs/architecture/domain-and-data.md) | Bounded contexts, agregados e invariantes |
+| [Modelo de ameaças](docs/security/threat-model.md) | Ativos, riscos e evidências de controle |
+| [Roadmap](docs/roadmap.md) | RAG, MCP e cloud após MVP |
+| [ADRs](docs/architecture/decisions/) | Decisões e razões para alternativas |
+| [Contribuição](CONTRIBUTING.md) | Fluxo de trabalho e revisão |
 
-O projeto é educacional e de portfólio. Usar dados sintéticos. Não reutilizar código, arquitetura interna, nomes, dados, exemplos, credenciais ou regras de negócio da CWI, OSF ou clientes. Não conectar a produção nem expor dados pessoais reais durante a mentoria.
+## Execução
 
-## Como contribuir
+Ainda não há aplicação nem comandos de execução. Quando M1 estiver pronto, esta seção será substituída por instruções verificadas de clone, configuração, subida, usuários sintéticos, testes e shutdown. Até lá, use `tasks.md` para acompanhar a implementação planejada.
 
-Consulte [CONTRIBUTING.md](CONTRIBUTING.md). Cada PR deve relacionar requisito, tarefa, testes executados, limitações e atualização documental. Commits usam Conventional Commits em inglês e não incluem trailers de coautoria.
+## Portfólio e dados
 
-## Licença
+Usar somente conteúdo sintético. Não copiar código, arquitetura interna, nomes, dados, regras de negócio, exemplos, credenciais ou documentos da CWI, OSF ou clientes. Em currículo/LinkedIn, descrever apenas contribuição individual demonstrável por PR, testes, ADR ou demo. Não alegar piloto real, precisão, escala ou segurança operacional sem evidência.
 
-Licença ainda não definida. Até que uma licença seja adicionada, não presuma permissão para reutilizar ou redistribuir o conteúdo deste repositório.
+## Commits e licença
+
+Commits em inglês com Conventional Commits (`docs:`, `feat:`, `test:`, etc.). Não adicionar `Co-authored-by`. Licença ainda não definida; até haver arquivo de licença, não presumir permissão de redistribuição.

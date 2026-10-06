@@ -1,61 +1,48 @@
-# Contribuindo
+# Contribuição
 
-Este repositório usa desenvolvimento orientado por especificações. A documentação define comportamento e critérios de aceite; o código deve materializar essas decisões e trazer evidência.
+Desenvolvimento guiado por specs; leia [AGENTS.md](AGENTS.md) e a [constituição](.specify/memory/constitution.md).
 
-## Fluxo de mudança
+## Fluxo
 
-1. Identifique a especificação e os requisitos afetados; se não houver, proponha uma nova em `specs/NNN-nome/`.
-2. Descreva comportamento atual, mudança desejada, atores, cenários de sucesso, erros, autorização, dados e estados.
-3. Revise ambiguidades e limites de escopo antes de planejar.
-4. Atualize o plano técnico se a mudança alterar módulos, dependências, armazenamento, mensageria, IA ou operação.
-5. Registre decisão significativa como ADR. Numere sequencialmente (`ADR-0001`, `ADR-0002`...).
-6. Decomponha em tarefas independentes, cada uma com requisito relacionado e condição verificável de conclusão.
-7. Implemente testes junto com o comportamento. Não declare requisito completo com teste pendente.
-8. Abra PR com evidência, riscos e documentação atualizada.
+1. Abra ou atualize spec em `specs/NNN-nome/` com problema, escopo, atores, permissões, estados, erros, requisitos e cenários Dado/Quando/Então.
+2. Revise domínio e contrato com evidência. Não deixe dúvida sobre tenant, identidade, concorrência, idempotência ou recuperação escondida em comentário de código.
+3. Atualize plano e ADR quando limites, dependências, dados, custo, segurança, mensageria ou operação mudarem.
+4. Divida em tarefas pequenas relacionadas a IDs de requisito; uma tarefa deve ter resultado demonstrável.
+5. Implemente testes adequados à regra e falha. Atualize spec, OpenAPI, runbook e tarefas conforme resultado.
+6. Abra PR com requisitos, tarefas, evidências/comandos, limitações e autoria individual. Alterne driver/reviewer.
 
-## Estrutura da especificação
+Use os modelos em [`specs/templates/`](specs/templates/) para novas propostas. Estado deve ser explícito: proposta, pronta para revisão, em andamento, aceita, adiada ou substituída. Só owner/participantes podem mover proposta para aceita; agente não presume aceite.
 
-Uma especificação funcional deve conter:
+## Checklist de spec
 
-- problema, objetivos e fora de escopo;
-- atores e permissões;
-- vocabulário do domínio;
-- requisitos funcionais com IDs estáveis;
-- regras de negócio e transições válidas;
-- cenários de aceite no formato Dado/Quando/Então;
-- falhas, reprocessamento e comportamento sem dependências externas;
-- requisitos de segurança, privacidade e acessibilidade;
-- requisitos de qualidade mensuráveis ou verificáveis;
-- questões abertas, premissas e dependências.
+- Problema, objetivo e fora de escopo definidos.
+- Atores, identidade, autorização e tenancy definidos.
+- Vocabulário, invariantes, estados e transições definidos.
+- Caminhos de sucesso, validação, conflito, falha e recuperação observáveis.
+- Contrato de API/evento e idempotência considerados.
+- Segurança, privacidade, retenção e custos abordados.
+- NFRs verificáveis; fontes externas citadas quando condicionam decisão.
+- Premissas, questões pendentes e critérios de aceite identificados.
 
-Evite amarrar a especificação de comportamento a uma biblioteca ou classe. O plano registra como o sistema cumprirá o comportamento.
+## Checklist de PR
 
-## Pronto para implementar
-
-Uma especificação está pronta para virar plano quando cada requisito tiver ator/contexto, comportamento e resultado observável; estados e autorização estiverem definidos; erros relevantes forem cobertos; dependências e dúvidas bloqueadoras estiverem identificadas.
-
-Uma tarefa está pronta para revisão quando a implementação e testes atenderem aos IDs indicados, o pipeline passar, migrações forem reversíveis ou tiverem procedimento seguro, documentação refletir o comportamento e não houver dados ou segredos reais.
-
-## PR checklist
-
-- [ ] Referencia `FR-*`, `NFR-*` ou `BR-*` e tarefas relacionadas.
-- [ ] Atualiza a spec se comportamento ou aceite mudou.
-- [ ] Inclui testes de sucesso, autorização e falhas aplicáveis.
-- [ ] Verifica isolamento entre workspaces quando há dados multi-tenant.
-- [ ] Cobre repetição/idempotência se há evento, fila ou chamada externa.
-- [ ] Atualiza ADR, OpenAPI ou documentação operacional quando aplicável.
-- [ ] Informa comandos executados e resultado, sem alegar verificações que não rodaram.
-- [ ] Usa dados sintéticos; remove credenciais e conteúdo sensível de logs e fixtures.
-- [ ] Commits seguem Conventional Commits; sem trailer de coautoria.
+- [ ] Relaciona `FR-*`, `BR-*`, `NFR-*` e IDs de tarefa.
+- [ ] Testa regra, autorização e falha aplicáveis; informa apenas testes realmente executados.
+- [ ] Inclui teste negativo de isolamento entre workspaces para recurso multi-tenant.
+- [ ] Cobre repetição/concorrência quando há escrita, evento ou chamada externa.
+- [ ] Atualiza OpenAPI, ADRs, documentação e tarefa se necessário.
+- [ ] Usa dados sintéticos; não registra corpo livre ou segredo.
+- [ ] Revisor independente verificou impacto e evidência.
+- [ ] Commit usa Conventional Commits e não traz `Co-authored-by`.
 
 ## Commits
 
-Usar tipos como `feat`, `fix`, `docs`, `test`, `refactor`, `build`, `ci` e `chore`. Exemplos:
+Assunto em inglês, curto, imperativo e sem ponto. Tipos comuns: `feat`, `fix`, `docs`, `test`, `refactor`, `build`, `ci`, `chore`.
 
 ```text
-docs: define request triage acceptance criteria
-feat(triage): add human approval for AI suggestions
-test(security): reject cross-workspace request access
+docs: define authenticated request intake
+feat(triage): require human approval for suggestions
+test(messaging): cover unroutable outbox events
 ```
 
-Escrever o assunto em inglês, no imperativo, curto e sem ponto final. Usar `!` e seção `BREAKING CHANGE:` apenas quando houver incompatibilidade deliberada. Não adicionar trailers `Co-authored-by`.
+Use `!`/`BREAKING CHANGE:` somente para incompatibilidade deliberada. Não incluir trailer de coautoria.
