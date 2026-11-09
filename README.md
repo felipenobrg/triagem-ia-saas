@@ -1,101 +1,82 @@
 # Triagem Inteligente
 
-Projeto de mentoria para desenhar e construir, em dupla, um SaaS didático de triagem de solicitações técnicas com IA assistiva. O recorte permite praticar Java/Spring, arquitetura de software, React/TypeScript, segurança multi-tenant, mensageria e operação.
+Projeto de mentoria para **construir**, em dupla, um sistema de triagem e atendimento de solicitações técnicas. A pessoa solicitante abre um pedido; um agente decide como classificá-lo e acompanha o atendimento. Uma IA pode sugerir categoria, urgência e resumo, mas a decisão continua humana.
 
-> **Estado atual:** repositório documental. A aplicação ainda não foi implementada. A spec e as ADRs descrevem o alvo proposto; não significam que as capacidades já existem.
+> **Estado do projeto:** este repositório contém especificações, decisões e tarefas. **Ainda não há aplicação, build ou demo executável.** As funcionalidades descritas abaixo são o que os participantes vão desenvolver, não recursos já entregues.
 
-## Produto em uma frase
+## O produto, na prática
 
-Uma pessoa autenticada envia uma solicitação técnica ao workspace. O pedido aparece na fila de triagem; a IA pode sugerir categoria, urgência e resumo, mas somente uma pessoa agente decide a classificação que o coloca na fila de atendimento. Se RabbitMQ ou IA falhar, a classificação manual continua disponível. A evolução proposta na Spec 002 acrescenta responsável, prioridade, prazo, espera por resposta, reabertura e vínculo de duplicados.
+Imagine que Ana não consegue acessar um ambiente de desenvolvimento:
 
-## O que os alunos vão construir
+1. Ana entra no workspace e abre uma solicitação. Ela vê apenas os próprios pedidos.
+2. O pedido aparece na **fila de triagem**. Um agente pode classificar manualmente ou revisar uma sugestão da IA. Se IA ou RabbitMQ falharem, o caminho manual continua disponível.
+3. Após a decisão humana, o pedido entra na **fila de atendimento**. O agente confirma impacto e urgência; o sistema calcula prioridade e prazo.
+4. Um agente assume o pedido. Se precisar de informações, faz uma pergunta a Ana; o prazo pausa até ela responder.
+5. O agente resolve o pedido. Se Ana contestar dentro da janela definida, um novo ciclo começa sem apagar o histórico anterior.
 
-O repositório é o ponto de partida, não um aplicativo pronto. As [tarefas da Spec 001](specs/001-ai-assisted-request-triage/tasks.md) constroem a triagem; as [tarefas da Spec 002](specs/002-service-workflow/tasks.md) aprofundam o atendimento depois que identidade, criação, classificação manual e auditoria estiverem funcionando.
+A [Spec 001](specs/001-ai-assisted-request-triage/spec.md) define abertura, triagem e classificação humana. A [Spec 002](specs/002-service-workflow/spec.md), ainda proposta para revisão dos participantes, acrescenta prioridade, prazo, responsável, andamento, reabertura e vínculo entre pedidos duplicados.
 
-### Primeiro exercício executável
+| Papel | O que pode fazer |
+| --- | --- |
+| **Solicitante** (`REQUESTER`) | Criar e acompanhar os próprios pedidos, responder a perguntas e contestar uma resolução elegível. |
+| **Agente** (`AGENT`) | Ver a fila do workspace, classificar, assumir e conduzir pedidos, revisar sugestões e relacionar duplicados. |
+| **Admin** (`ADMIN`) | Fazer o trabalho de agente e administrar membros e atribuições do workspace. |
 
-Criar Maven Wrapper, projeto Spring Boot, teste automatizado e endpoint de health (T101). O aceite é outra pessoa clonar o repositório, executar teste e subir a API seguindo o README atualizado no PR. Esse exercício ainda não implementa o produto.
+Keycloak confirma a identidade. O backend consulta a associação e o papel no workspace a cada operação; informar um ID no navegador não concede acesso.
 
-### Alvo da Spec 001
+## Por onde começar com a dupla
 
-1. Login local via Keycloak OIDC; associação e papéis verificados pelo backend.
-2. Requester cria solicitação idempotente e vê apenas as próprias.
-3. Agent/admin vê fila do workspace, histórico e faz triagem manual ou revisa sugestão.
-4. PostgreSQL grava estado e outbox atomicamente; dispatcher entrega evento persistente ao RabbitMQ.
-5. Worker idempotente usa provedor fake por padrão. OpenAI é opt-in, com dados sintéticos e teto de aplicação de US$5/mês.
-6. Sugestão validada permanece rascunho até decisão humana.
+Para obter a documentação localmente:
 
-O MVP é local, sem RAG, MCP, intake público ou dado real. AWS é uma extensão temporária posterior e não faz parte do aceite local.
+```bash
+git clone https://github.com/felipenobrg/triagem-ia-saas.git
+cd triagem-ia-saas
+```
 
-### Evolução da Spec 002
+**Primeiro encontro — definir o comportamento.** Leiam esta página, a [constituição](.specify/memory/constitution.md) e, na [Spec 001](specs/001-ai-assisted-request-triage/spec.md), os atores, estados e cenários de aceite. Percorram juntos o exemplo da Ana: quem pode ver o pedido, quais estados ele atravessa e o que acontece quando a IA responde tarde? Registrem na spec qualquer decisão que mudar a regra. Essa é a tarefa [T001](specs/001-ai-assisted-request-triage/tasks.md).
 
-1. Agente confirma impacto e urgência; uma matriz calcula prioridade e prazo de resolução em horário útil.
-2. Agente assume ou transfere o pedido; concorrência não permite dois responsáveis vencedores.
-3. Pergunta ao solicitante pausa o prazo; a resposta retoma o atendimento.
-4. Resolução e contestação preservam ciclos e histórico; duplicados podem ser vinculados sem mesclar dados ou liberar leitura de outro pedido.
+**Primeiro PR técnico — criar a base executável.** A tarefa [T101](specs/001-ai-assisted-request-triage/tasks.md) pede Maven Wrapper, projeto Spring Boot modular e teste de arquitetura. O health check está em **T102** e pode entrar no mesmo PR se a fatia continuar pequena. Outra pessoa deve conseguir clonar, executar o teste e verificar a API pelas instruções acrescentadas ao README. Escolham e registrem versões compatíveis de Java e Spring nesse PR. Até essa entrega, não existe comando de build ou subida de aplicação verificado aqui.
 
-Essas regras são propostas para revisão dos participantes, não capacidades implementadas. A [Spec 002](specs/002-service-workflow/spec.md) define comportamento e exemplos de aceite.
+**Próximo incremento — fazer o domínio funcionar.** Modelem estados e classificação manual com testes antes de acrescentar todas as integrações. Depois conectem autenticação, banco e API; construam uma tela mínima; adicionem mensageria e IA fake em fatias próprias. A [sequência sugerida](docs/mentoring-guide.md) mostra dependências e demonstrações de cada etapa.
 
-## Como este projeto é desenvolvido
+Para a Spec 002, comecem por responsável, prioridade e prazo **após** identidade, criação, classificação manual e auditoria. A implementação de RabbitMQ e IA não bloqueia essa primeira fatia. Antes do código, revisem com a dupla a [matriz de prioridade, o calendário e a janela de reabertura](specs/002-service-workflow/spec.md).
 
-Usamos *spec-driven development*: primeiro comportamento e critérios observáveis; depois arquitetura e decisões; então tarefas rastreáveis e implementação. Para cada mudança:
+## Como trabalhamos com specs
 
-1. Leia [AGENTS.md](AGENTS.md), a [constituição](.specify/memory/constitution.md) e a spec correspondente.
-2. Atualize requisitos (`FR-*`, `BR-*`, `NFR-*`) e cenários antes de alterar comportamento.
-3. Atualize o plano e crie/ajuste ADR se houver mudança de dependência, consistência, segurança, custo ou deployment.
-4. Quebre em uma fatia vertical pequena. PR aponta requisito, tarefa, evidência, riscos e limitações.
-5. Alterne driver/reviewer entre Guilherme e Luis. Ambos devem implementar e revisar backend e frontend ao longo do produto; cada PR tem autoria individual clara.
-6. Atualize docs e tarefas junto ao comportamento implementado. Não marque requisito como entregue antes da evidência.
+Cada mudança segue o ciclo **regra → cenário observável → contrato → código e teste → demonstração**:
 
-No início de cada sessão de mentoria, escolham uma tarefa que caiba entre os dois encontros mensais. No encontro seguinte, a dupla demonstra código, decisão, teste e uma falha tratada. O objetivo é aprender a defender decisões técnicas e produzir evidência concreta para portfólio. Antes de implementar a Spec 002, revisem com os participantes a matriz de prioridade, o calendário e a janela de reabertura.
+1. Escolham uma tarefa pequena e identifiquem os requisitos `FR-*`, `BR-*`, `NFR-*` ou equivalentes `FR2-*`, `BR2-*`, `NFR2-*` envolvidos.
+2. Escrevam um cenário de sucesso e pelo menos um de autorização, concorrência ou falha. Resolvam ambiguidades na spec antes de programar o comportamento afetado.
+3. Atualizem contrato HTTP, plano ou ADR quando a decisão mudar API, dados, limites, segurança ou consistência.
+4. Um participante implementa e outro revisa; invertam os papéis no PR seguinte. Ambos devem implementar e revisar backend e frontend ao longo do projeto.
+5. No encontro seguinte, demonstrem o resultado, os testes **realmente executados** e uma limitação ou falha tratada. Só então marquem a tarefa como concluída.
 
-### Ritual de uma tarefa
+Exemplo da [Spec 002](specs/002-service-workflow/spec.md): dois agentes tentam assumir o mesmo pedido usando a mesma versão. Apenas um deve conseguir; o outro recebe conflito e o histórico registra uma atribuição. O teste precisa exercer essa disputa, não apenas uma chamada isolada. Veja o [guia da mentoria](docs/mentoring-guide.md) para o cenário completo e o roteiro de revisão.
 
-1. Escolham um resultado pequeno e demonstrável em `tasks.md`.
-2. Leiam o requisito e escrevam um cenário de sucesso, um de autorização/concorrência e um de falha/recuperação. Ajustem a spec se houver ambiguidade.
-3. Atualizem contrato/ADR quando a decisão afetar API, estado, dados ou consistência.
-4. Um participante implementa; outro revisa e tenta quebrar a regra com testes. Invertam os papéis no PR seguinte.
-5. Demonstrem o comportamento, o comando/teste realmente executado e o que ainda falta. Só então marquem a tarefa como concluída.
-
-Exemplo: dois agentes tentam assumir o mesmo pedido usando a mesma versão. Apenas um vence; o segundo recebe conflito e o histórico mostra uma atribuição. A regra, o teste de concorrência e a demo fazem parte da mesma entrega.
+IA pode ajudar a escrever e investigar código. Quem entrega precisa explicar como o fluxo funciona, por que escolheu a solução e qual evidência prova a regra.
 
 ## Arquitetura proposta
 
-- Monólito modular Spring Boot; Spring Modulith verifica limites e dependências.
-- Módulos: identity, requests, triage, messaging e API.
-- PostgreSQL/Flyway como fonte de verdade; CQRS leve no mesmo banco.
-- RabbitMQ para triagem assíncrona; outbox/inbox próprias, publicação confirmada e roteabilidade verificada, consumidores idempotentes, retry limitado e DLQ.
-- React + TypeScript; OpenAPI como contrato da API.
-- Keycloak local para OIDC; membership/role mantidos e autorizados pela aplicação.
-- Porta de IA substituível, fake default e adaptador OpenAI opt-in.
-- Docker Compose e CI reproduzíveis.
+- **Backend:** Java/Spring Boot em monólito modular, com limites verificados pelo Spring Modulith. Módulos propostos: `identity`, `requests`, `triage`, `messaging` e `api`.
+- **Dados:** PostgreSQL e Flyway. Pedido, auditoria e intenção de publicar evento são gravados na mesma transação quando necessário.
+- **Identidade:** Keycloak/OIDC local; membership e papéis de negócio ficam na aplicação.
+- **Processamento assíncrono:** RabbitMQ com outbox/inbox, confirmação de publicação, consumidor idempotente, retry limitado e DLQ. A entrega é *at-least-once*.
+- **Interface:** React e TypeScript; contrato da API documentado em OpenAPI quando implementado.
+- **IA:** provedor falso e determinístico por padrão. OpenAI é opcional, com opt-in, somente dados sintéticos e teto de aplicação definido na Spec 001. Sugestão não abre atendimento sem revisão humana.
 
-DDD é aplicado para linguagem, limites e invariantes. Eventos representam integração e não implicam event sourcing. RAG e MCP só entram com novas specs após evidência de valor e controles definidos.
+É uma arquitetura **planejada**. O [plano da Spec 001](specs/001-ai-assisted-request-triage/plan.md), o [plano da Spec 002](specs/002-service-workflow/plan.md) e as [ADRs](docs/architecture/decisions/) explicam os limites e as decisões. RAG, MCP e cloud ficam no [roadmap posterior](docs/roadmap.md).
 
-## Documentação
+## Documentos do projeto
 
-| Documento | Uso |
+| Para entender... | Leia |
 | --- | --- |
-| [Spec 001](specs/001-ai-assisted-request-triage/spec.md) | Escopo, atores, regras, requisitos e aceite |
-| [Contrato HTTP](specs/001-ai-assisted-request-triage/api-contract.md) | Rotas, autorização, idempotência, erros e evento |
-| [Plano técnico](specs/001-ai-assisted-request-triage/plan.md) | Módulos, stack, dados, mensageria, IA e segurança |
-| [Tarefas](specs/001-ai-assisted-request-triage/tasks.md) | Milestones e rastreabilidade de implementação |
-| [Spec 002](specs/002-service-workflow/spec.md) · [contrato](specs/002-service-workflow/api-contract.md) · [plano](specs/002-service-workflow/plan.md) · [tarefas](specs/002-service-workflow/tasks.md) | Evolução proposta para gestão do atendimento |
-| [Domínio e dados](docs/architecture/domain-and-data.md) | Bounded contexts, agregados e invariantes |
-| [Modelo de ameaças](docs/security/threat-model.md) | Ativos, riscos e evidências de controle |
-| [Roadmap](docs/roadmap.md) | RAG, MCP e cloud após MVP |
-| [ADRs](docs/architecture/decisions/) | Decisões e razões para alternativas |
-| [Contribuição](CONTRIBUTING.md) | Fluxo de trabalho e revisão |
-| [Guia da mentoria](docs/mentoring-guide.md) | Condução dos encontros, ordem de implementação e exemplo de PR |
+| Comportamento inicial, atores, estados e aceite | [Spec 001](specs/001-ai-assisted-request-triage/spec.md) · [contrato HTTP](specs/001-ai-assisted-request-triage/api-contract.md) · [tarefas](specs/001-ai-assisted-request-triage/tasks.md) |
+| Atendimento, prioridade, prazo, atribuição e reabertura | [Spec 002](specs/002-service-workflow/spec.md) · [contrato HTTP](specs/002-service-workflow/api-contract.md) · [tarefas](specs/002-service-workflow/tasks.md) |
+| Como conduzir os encontros e revisar PRs | [Guia da mentoria](docs/mentoring-guide.md) · [contribuição](CONTRIBUTING.md) |
+| Dados, segurança e escolhas de arquitetura | [Domínio e dados](docs/architecture/domain-and-data.md) · [modelo de ameaças](docs/security/threat-model.md) · [ADRs](docs/architecture/decisions/) |
 
-## Execução
+## Execução e limites
 
-Ainda não há aplicação nem comandos de execução. Quando o primeiro exercício estiver pronto, esta seção receberá instruções verificadas de clone, build, teste e subida da API. Conforme os serviços forem implementados, acrescentar configuração, usuários sintéticos, fluxo e shutdown. Até lá, acompanhe as tarefas das Specs 001 e 002.
+Ainda não há aplicação nem comandos de execução. O primeiro PR técnico deve atualizar esta seção com comandos **testados em clone limpo** para build, teste e subida. Os PRs seguintes acrescentam Compose, usuários sintéticos, fluxo de demonstração e shutdown conforme cada parte existir.
 
-## Portfólio e dados
-
-Usar somente conteúdo sintético. Não copiar código, arquitetura interna, nomes, dados, regras de negócio, exemplos, credenciais ou documentos da CWI, OSF ou clientes. Em currículo/LinkedIn, descrever apenas contribuição individual demonstrável por PR, testes, ADR ou demo. Não alegar piloto real, precisão, escala ou segurança operacional sem evidência.
-
-## Commits e licença
-
-Commits em inglês com Conventional Commits (`docs:`, `feat:`, `test:`, etc.). Não adicionar `Co-authored-by`. Licença ainda não definida; até haver arquivo de licença, não presumir permissão de redistribuição.
+Usar apenas dados sintéticos. Não copiar código, regras, documentos, credenciais ou dados da CWI, OSF ou clientes. Em portfólio, descrever somente contribuição e comportamento demonstráveis por PR, teste ou demo. Commits seguem Conventional Commits em inglês; não incluir trailer `Co-authored-by`. A licença ainda não foi definida; não presumir permissão de redistribuição.
