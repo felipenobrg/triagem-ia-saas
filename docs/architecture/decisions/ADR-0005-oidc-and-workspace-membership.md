@@ -1,5 +1,7 @@
 # ADR-0005: OIDC local e membership da aplicação
 
+> **Para estudar:** separe autenticação (“quem é?”) de autorização (“pode agir neste workspace?”). Teste mentalmente o que deve acontecer quando um papel é removido enquanto o token ainda é válido. O realm e as contas são apenas fixtures sintéticas planejadas.
+
 - **Estado:** escolhido para MVP
 - **Data:** 2026-10-06
 

@@ -1,5 +1,7 @@
 # ADR-0001: Backend como monólito modular
 
+> **Para estudar:** compare o custo de manter limites dentro de um único deploy com o de separar serviços. Pergunta para a dupla: que teste mostraria uma dependência indevida entre módulos? Esta é uma escolha didática, ainda sem implementação.
+
 - **Estado:** escolhido para MVP; verificar em implementação
 - **Data:** 2026-10-06
 

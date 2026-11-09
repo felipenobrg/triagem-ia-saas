@@ -1,5 +1,7 @@
 # Tarefas — Spec 002
 
+> **Para estudar:** escolha uma fatia que caiba entre encontros e faça o participante explicar regra, teste e limitação. Os IDs ligam tarefas à spec; nenhuma caixa marcada deve significar somente “documento lido” ou “código gerado”.
+
 Todas estão planejadas. A Spec 001 fornece a base; nenhuma tarefa abaixo é evidência de implementação. Cada PR informa requisito, cenário, teste executado, demo e limite conhecido. Alternar driver/reviewer.
 
 ## M0 — Revisão do produto

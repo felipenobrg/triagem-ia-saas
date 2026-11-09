@@ -1,5 +1,7 @@
 # ADR-0003: IA sugere; pessoa decide
 
+> **Para estudar:** compare o encaminhamento para humano com o pedido de complemento usando exemplos sintéticos. Procure um caso em que a IA retenha indevidamente um pedido útil e defina como o usuário chega a uma pessoa. Nenhuma qualidade de modelo foi medida aqui.
+
 - **Estado:** escolhido para MVP
 - **Data:** 2026-10-06
 

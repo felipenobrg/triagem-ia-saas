@@ -1,5 +1,7 @@
 # Plano técnico — Spec 002
 
+> **Para estudar:** trate calendário, locks e migrações como decisões para provar em testes locais. Um teste com relógio real ou um único comando sequencial não demonstra os casos de pausa e disputa descritos na spec. Este plano não é uma arquitetura operacional verificada.
+
 - **Estado:** proposta técnica; nenhuma implementação ou teste executado.
 - **Spec:** [regras](spec.md) · **Contrato:** [HTTP](api-contract.md) · **Decisão:** [ADR-0006](../../docs/architecture/decisions/ADR-0006-service-workflow.md).
 

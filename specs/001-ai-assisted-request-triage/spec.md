@@ -1,5 +1,7 @@
 # Spec 001: Triagem assistida de solicitações
 
+> **Para estudar:** esta spec é um caso fictício para praticar análise de requisitos. Leia primeiro atores, estados e cenários; depois tente explicar por que a IA pode pedir complemento, mas não pode encerrar nem classificar definitivamente um pedido. Nenhuma regra abaixo foi validada em atendimento real.
+
 - **Estado:** pronta para revisão dos participantes; ainda não aprovada como produto. [Spec 002](../002-service-workflow/spec.md) propõe evolução do atendimento após a base manual.
 - **Data:** 2026-11-09
 - **Alvo:** MVP didático local, com dados sintéticos

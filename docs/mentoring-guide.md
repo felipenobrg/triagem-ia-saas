@@ -1,5 +1,7 @@
 # Guia de condução da mentoria
 
+> **Para estudar:** use o roteiro como apoio aos encontros, adaptando a ordem à experiência da dupla. Cada demonstração deve mostrar o que foi realmente implementado; os exemplos deste guia são situações fictícias.
+
 Este guia ajuda mentor e participantes a transformar as specs em código. O repositório ainda é documental: nenhum comando de build, teste ou demo do produto está verificado. As regras da [Spec 001](../specs/001-ai-assisted-request-triage/spec.md) e da [Spec 002](../specs/002-service-workflow/spec.md) são propostas para revisão dos participantes.
 
 ## A história que o produto precisa contar

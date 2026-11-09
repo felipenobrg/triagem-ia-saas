@@ -4,6 +4,8 @@ Projeto de mentoria para **construir**, em dupla, um sistema de triagem e atendi
 
 > **Estado do projeto:** este repositório contém especificações, decisões e tarefas. **Ainda não há aplicação, build ou demo executável.** As funcionalidades descritas abaixo são o que os participantes vão desenvolver, não recursos já entregues.
 
+> **Uso exclusivamente didático:** cenários, papéis, prazos, arquitetura e critérios de aceite são exercícios para discussão e implementação na mentoria. Não representam operação real, compromisso de atendimento, validação de segurança ou recomendação de adoção por uma empresa.
+
 ## O produto, na prática
 
 Imagine que Ana não consegue acessar um ambiente de desenvolvimento:

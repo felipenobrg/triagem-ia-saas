@@ -1,5 +1,7 @@
 # Modelo de ameaças do MVP
 
+> **Para estudar:** cada linha é um cenário para criar teste ou experimento local com dados sintéticos. Controles descritos são intenções de implementação, não certificação de segurança; a dupla deve mostrar evidência para cada controle que disser ter construído.
+
 - **Estado:** hipóteses e controles planejados; nenhum controle foi validado em aplicação ainda.
 - **Escopo:** local, dados sintéticos, Keycloak OIDC, API, PostgreSQL, RabbitMQ, worker e adapter IA opcional.
 - **Fora do MVP:** intake público, RAG, MCP e cloud pública; cada um exige avaliação específica.

@@ -1,10 +1,12 @@
 # Tarefas — Spec 001
 
+> **Para estudar:** use cada tarefa como exercício pequeno, com demonstração reproduzível e pelo menos um teste de falha ou autorização quando couber. Caixas vazias significam trabalho planejado; marcá-las exige evidência do código e do comportamento, não apenas leitura da spec.
+
 Todas as tarefas estão **planejadas**, não implementadas. Concluir significa evidência anexada no PR, critérios atendidos e documentação atualizada. IDs de requisitos referem-se a [`spec.md`](spec.md).
 
 ## M0 — Contratos para começar
 
-- [ ] **T001** Rever vocabulário, atores, estados e transições com os dois participantes; atualizar spec caso a conversa revele regra real diferente. `FR-001–017`, `BR-001–009`
+- [ ] **T001** Rever vocabulário, atores, estados e transições com os dois participantes; atualizar a spec se a dupla escolher outra regra para o exercício. `FR-001–017`, `FR-023–024`, `BR-001–010`
 - [ ] **T002** Aprovar contrato OpenAPI inicial, envelope de erro, paginação por cursor, `Idempotency-Key`, concorrência/versionamento e limites de payload. `FR-005–010`, `NFR-004`
 - [ ] **T003** Fixar ADRs e registrar pontos que só serão decididos após evidência (modelo/preço atual, tamanho de textos, cloud). Decisões já fixadas não reabrem gate do MVP.
 - [ ] **T004** Criar conjunto inicial de solicitações sintéticas suficientes/insuficientes e rubric de rota, pergunta e rótulos; versionar adjudicação. Sem meta de qualidade antes do baseline. `FR-017`, `NFR-006`

@@ -1,5 +1,7 @@
 # Contrato HTTP inicial
 
+> **Para estudar:** cada rota descreve uma promessa observável que os alunos deverão implementar e testar. Antes de escrever controller, identifique quem pode chamar a rota, qual versão/estado ela exige e qual erro não deve revelar dados de outro workspace. Não existe servidor atendendo a este contrato hoje.
+
 Contrato funcional da Spec 001. Antes da primeira implementação, publicar OpenAPI que reflita estes recursos e manter ambos alinhados. Exemplos usam valores sintéticos.
 
 ## Convenções

@@ -2,6 +2,8 @@
 
 Antes de alterar comportamento, leia a constituição, spec ativa, plano e tarefas. Este repositório é spec-driven: implementação sem requisito rastreável não está pronta para começar.
 
+Todo o material serve exclusivamente ao estudo. Nomes, fluxos, dados e decisões descritos aqui pertencem ao exercício; não devem ser apresentados como sistema implantado ou prática validada em operação real.
+
 ## Regras do repositório
 
 - Dados, realm, testes, demos e avaliações são sintéticos. Nunca usar dados, código, regras, exemplos ou credenciais da CWI, OSF ou clientes.

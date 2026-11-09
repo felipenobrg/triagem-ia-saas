@@ -1,5 +1,7 @@
 # ADR-0006: Atendimento com prazo e decisão humana
 
+> **Para estudar:** escolha uma disputa de atribuição e uma mudança de prioridade após o prazo vencer. Discuta quais dados devem permanecer no histórico e que teste provaria isso. Prazos e matriz são valores fictícios para o exercício, sujeitos à revisão da dupla.
+
 - **Estado:** proposta para revisão dos participantes; implementação pendente
 - **Data:** 2026-11-09
 

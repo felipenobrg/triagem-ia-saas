@@ -1,5 +1,7 @@
 # Domínio e modelo de dados
 
+> **Para estudar:** use as tabelas como hipótese de modelagem. Para cada entidade, pergunte quem pode alterá-la, qual invariante o banco consegue proteger e qual regra precisa continuar no caso de uso. O esquema abaixo não é uma migração executada.
+
 Este é o modelo conceitual da [Spec 001](../../specs/001-ai-assisted-request-triage/spec.md), para o MVP local. Não há código nem esquema de banco implementado ainda. RAG/MCP são extensões fora desta modelagem inicial.
 
 ## Linguagem ubíqua

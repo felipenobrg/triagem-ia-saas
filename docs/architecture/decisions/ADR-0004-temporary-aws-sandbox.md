@@ -1,5 +1,7 @@
 # ADR-0004: AWS como sandbox temporário posterior
 
+> **Para estudar:** use esta ADR para discutir custo, acesso, reversão e limpeza de recursos. Os serviços, preços e cotas mencionados precisam de verificação no dia do exercício; este texto não autoriza provisionamento nem descreve uma implantação existente.
+
 - **Estado:** opção futura, bloqueada até aceite local e revisão de custo
 - **Data:** 2026-10-06
 

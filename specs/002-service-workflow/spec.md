@@ -1,5 +1,7 @@
 # Spec 002: Gestão do atendimento
 
+> **Para estudar:** esta evolução fictícia concentra regras de atribuição, prioridade, tempo e histórico. Antes de codificar, peça à dupla para simular dois agentes concorrendo pelo mesmo pedido e um prazo pausado na sexta-feira. Os números de prioridade e prazo não vêm de operação real.
+
 - **Estado:** proposta pronta para revisão dos participantes; nada implementado.
 - **Data:** 2026-11-09
 - **Depende de:** identidade, isolamento, criação, classificação manual, auditoria e concorrência da [Spec 001](../001-ai-assisted-request-triage/spec.md). A rota IA → humano/complemento não bloqueia o primeiro incremento desta spec; durante sua implementação, a classificação manual com bypass explícito permite exercitar o atendimento.
@@ -13,7 +15,7 @@ Exemplo: Ana abre um pedido de acesso no workspace A. Um agente confirma impacto
 
 ## 2. Escopo e dependências
 
-Incluído: responsável, transferência, impacto confirmado, prioridade derivada com override humano, prazo de resolução em horário útil, espera por resposta, reabertura e vínculo de duplicados. Tudo no monólito e PostgreSQL da Spec 001, sem novo serviço externo. Uma interface mínima mostra responsável, prioridade, prazo, motivo de espera e histórico. A IA da Spec 001 continua sugerindo apenas categoria, urgência e resumo; ampliar a saída da IA exige avaliação e mudança contratual posterior.
+Incluído: responsável, transferência, impacto confirmado, prioridade derivada com override humano, prazo de resolução em horário útil, espera por resposta, reabertura e vínculo de duplicados. Tudo no monólito e PostgreSQL da Spec 001, sem novo serviço externo. Uma interface mínima mostra responsável, prioridade, prazo, motivo de espera e histórico. A IA da Spec 001 faz primeiro o roteamento humano/complemento e, quando encaminha ao humano, sugere categoria, urgência e resumo; ampliar sua saída para prioridade ou responsável exige avaliação e mudança contratual posterior.
 
 Fora de escopo: notificações externas, plantão 24/7, feriados, múltiplos calendários, SLA contratual, cobrança, automação de atribuição, fechamento automático, mesclagem ou exclusão de pedidos, RAG e uso real. O prazo aqui é uma meta didática de resolução, não promessa comercial.
 

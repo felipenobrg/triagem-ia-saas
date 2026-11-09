@@ -1,5 +1,7 @@
 # ADR-0002: Outbox transacional e RabbitMQ
 
+> **Para estudar:** desenhe os pontos de falha entre gravar o pedido, publicar a mensagem, processá-la e confirmar o consumo. Explique por que uma entrega duplicada é possível e como o pedido continua acessível. O desenho ainda não foi testado em aplicação.
+
 - **Estado:** escolhido para MVP didático; confirmar operação em testes
 - **Data:** 2026-10-06
 

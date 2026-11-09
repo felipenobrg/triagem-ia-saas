@@ -1,5 +1,7 @@
 # Constituição do projeto
 
+> **Leitura de estudo:** estes princípios organizam o exercício de mentoria. Ao ler cada regra, identifique que evidência local a comprovaria e que hipótese ainda precisaria de revisão antes de um uso real.
+
 Versão: 1.1.0 · Estado: princípios obrigatórios · Atualizada: 2026-10-06
 
 Mudanças nestes princípios precisam de proposta, justificativa e decisão registrada. A constituição não substitui requisitos específicos da spec.

@@ -1,5 +1,7 @@
 # Contrato HTTP proposto — Spec 002
 
+> **Para estudar:** use os exemplos de payload para discutir transições, autorização e conflito de versão. Tente prever a resposta quando o responsável perde acesso ou quando dois pedidos de workspaces diferentes são vinculados. Nenhuma rota foi implementada.
+
 Estende o [contrato da Spec 001](../001-ai-assisted-request-triage/api-contract.md). Ainda não é OpenAPI implementada. Todas as rotas exigem Bearer OIDC e membership ativo. `workspaceId` seleciona contexto; o servidor autoriza. Erros usam o envelope da Spec 001; recurso fora do escopo retorna `404` sem confirmar existência.
 
 ## Convenções

@@ -1,5 +1,7 @@
 # Plano técnico — Spec 001
 
+> **Para estudar:** este plano registra uma solução proposta para comparar com alternativas. Em cada etapa, justifique a escolha com uma falha ou regra observável; “usar RabbitMQ” ou “usar IA” sozinho não é evidência de aprendizado. Nenhum componente está implementado.
+
 - **Estado:** proposta técnica pronta para revisão; aplicação ainda não existe.
 - **Restrição principal:** entregar vertical slices locais, cada um com comportamento, testes, documentação e demonstração.
 - **Spec:** [`spec.md`](spec.md) · **API:** [`api-contract.md`](api-contract.md) · **Modelo:** [`../../docs/architecture/domain-and-data.md`](../../docs/architecture/domain-and-data.md)

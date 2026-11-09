@@ -1,5 +1,7 @@
 # Contribuição
 
+> **Para estudo:** este fluxo ensina a relacionar requisito, decisão, código e evidência. Um PR didático demonstra aprendizagem; não comprova prontidão para uso real.
+
 Desenvolvimento guiado por specs; leia [AGENTS.md](AGENTS.md) e a [constituição](.specify/memory/constitution.md).
 
 ## Fluxo
