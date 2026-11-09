@@ -7,7 +7,7 @@ Todas as tarefas estão **planejadas**, não implementadas. Concluir significa e
 - [ ] **T001** Rever vocabulário, atores, estados e transições com os dois participantes; atualizar spec caso a conversa revele regra real diferente. `FR-001–017`, `BR-001–009`
 - [ ] **T002** Aprovar contrato OpenAPI inicial, envelope de erro, paginação por cursor, `Idempotency-Key`, concorrência/versionamento e limites de payload. `FR-005–010`, `NFR-004`
 - [ ] **T003** Fixar ADRs e registrar pontos que só serão decididos após evidência (modelo/preço atual, tamanho de textos, cloud). Decisões já fixadas não reabrem gate do MVP.
-- [ ] **T004** Criar conjunto inicial de solicitações sintéticas e rubric de rótulos; versionar método de adjudicação. Sem meta de qualidade antes do baseline. `FR-017`, `NFR-006`
+- [ ] **T004** Criar conjunto inicial de solicitações sintéticas suficientes/insuficientes e rubric de rota, pergunta e rótulos; versionar adjudicação. Sem meta de qualidade antes do baseline. `FR-017`, `NFR-006`
 
 ## M1 — Esqueleto reproduzível e identidade
 
@@ -39,12 +39,13 @@ Todas as tarefas estão **planejadas**, não implementadas. Concluir significa e
 
 ## M4 — IA opt-in, revisão e avaliação
 
-- [ ] **T401** Criar porta `TriageProvider`, fake determinístico default, validação de saída e limites. `FR-011–014`
-- [ ] **T402** Implementar fluxo de sugestão e tentativa com estados explícitos, aprovação/edit/rejeição humana e caminho manual. `FR-011–014`
+- [ ] **T401** Criar porta `TriageProvider` com rotas `HUMAN_REVIEW`/`REQUEST_CLARIFICATION`, fake determinístico default, validação de saída e limites. `FR-011–014`
+- [ ] **T402** Implementar análise inicial IA → revisão humana com sugestão ou pedido de complemento; aprovação/edit/rejeição humana e caminho manual. `FR-011–014`, `FR-023–024`
+- [ ] **T407** Implementar complemento único, pedido direto de humano, encaminhamento por incerteza/falha e bypass auditado durante indisponibilidade; testar sem sugestão e sem retenção indefinida. `FR-023–024`, `BR-010`
 - [ ] **T403** Implementar adapter OpenAI Responses API com structured output configurado; testes usam fake e não fazem chamadas de rede. `FR-014–016`
 - [ ] **T404** Guardar segredo fora do Git; gate `OPENAI_LIVE_ENABLED`; configurar modelo/preço/capacidade máxima por chamada; reserva concorrente e bloqueio duro de US$5/mês. `FR-015`
 - [ ] **T405** Tratar 429/5xx retryable conhecidos com backoff limitado; timeout ambíguo e falha após possível envio viram `OUTCOME_UNKNOWN`, com confirmação humana para reenvio. `FR-012`, `FR-021–022`
-- [ ] **T406** Rodar dataset sintético, comparar com labels, publicar métricas, confusion matrix, amostra de sumários, custo/latência e limitações. Guardar baseline, sem gate arbitrário. `FR-017`, `NFR-006`
+- [ ] **T406** Rodar dataset sintético, comparar rota humano/complemento e labels, publicar retenção indevida, confusion matrix, amostras de perguntas/sumários, custo/latência e limitações. Guardar baseline, sem gate arbitrário. `FR-017`, `NFR-006`
 
 ## M5 — Prontidão do demo local
 

@@ -2,7 +2,7 @@
 
 - **Estado:** proposta pronta para revisão dos participantes; nada implementado.
 - **Data:** 2026-11-09
-- **Depende de:** identidade, isolamento, criação, classificação manual, auditoria e concorrência da [Spec 001](../001-ai-assisted-request-triage/spec.md). RabbitMQ e IA não bloqueiam o primeiro incremento desta spec.
+- **Depende de:** identidade, isolamento, criação, classificação manual, auditoria e concorrência da [Spec 001](../001-ai-assisted-request-triage/spec.md). A rota IA → humano/complemento não bloqueia o primeiro incremento desta spec; durante sua implementação, a classificação manual com bypass explícito permite exercitar o atendimento.
 - **Fonte de verdade:** este documento define regras; [contrato HTTP](api-contract.md), [plano](plan.md) e [tarefas](tasks.md) detalham entrega.
 
 ## 1. Problema e resultado esperado

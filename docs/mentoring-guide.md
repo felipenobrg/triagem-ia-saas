@@ -5,8 +5,8 @@ Este guia ajuda mentor e participantes a transformar as specs em código. O repo
 ## A história que o produto precisa contar
 
 1. Uma pessoa autenticada abre um pedido sintético no próprio workspace.
-2. O pedido aparece na fila de triagem. Um agente pode classificar manualmente; uma sugestão de IA pode ajudá-lo, mas não decide.
-3. A classificação humana abre o atendimento. Agente confirma impacto e urgência, gerando prioridade e prazo.
+2. O agente de IA recebe primeiro: com informação suficiente, sugere classificação e encaminha ao humano; se faltar contexto, pede um complemento ao solicitante.
+3. A pessoa agente revisa a sugestão ou classifica manualmente quando não há sugestão. A classificação humana abre o atendimento. Agente confirma impacto e urgência, gerando prioridade e prazo.
 4. Um agente assume o pedido. Se precisa de informação, pergunta ao solicitante e pausa o prazo.
 5. Solicitante responde, atendimento continua e o agente resolve. Uma contestação dentro da janela abre novo ciclo sem apagar o anterior.
 6. Agente pode relacionar um segundo relato ao pedido canônico, sem mesclar os dados nem expor conteúdo entre solicitantes.
@@ -36,7 +36,7 @@ Uma pessoa é driver, outra reviewer; inverter no PR seguinte. Cada participante
 | 3. Acesso e dados | OIDC, membership, PostgreSQL, criação e leitura isolada | O ID da rota autoriza alguma coisa? |
 | 4. Atendimento | Prioridade, prazo, responsável e resolução | Como tempo e concorrência afetam o pedido? |
 | 5. Espera e contestação | Pausar, responder, resolver e reabrir em novo ciclo | O histórico permanece íntegro? |
-| 6. Assíncrono | Outbox, RabbitMQ, worker e fake de IA | O que acontece se cada processo cair? |
+| 6. Assíncrono | Outbox, RabbitMQ, worker e fake de IA que roteia humano/complemento | O que acontece se IA pedir contexto, falhar ou ficar incerta? |
 | 7. Avançado | Duplicados, custo/avaliação de IA, operação | Como provar isolamento e recuperação? |
 
 A ordem pode mudar se dependências técnicas exigirem. O primeiro incremento da Spec 002 requer identidade, criação, classificação manual e auditoria; pode ser feito antes do worker de IA. A demo final combina as capacidades sem chamar serviço real por padrão.

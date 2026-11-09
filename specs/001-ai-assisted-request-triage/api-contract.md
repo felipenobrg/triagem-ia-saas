@@ -29,13 +29,13 @@ Headers obrigatórios: `Idempotency-Key` (valor aleatório, 16–128 caracteres)
 
 `GET /api/v1/workspaces/{workspaceId}/requests?status=&category=&urgency=&from=&to=&cursor=&limit=`
 
-Agent/admin recebem fila do workspace. Requester recebe somente as próprias, ignorando filtro de `requesterId` enviado pelo cliente. Resposta inclui `items`, `nextCursor` e `hasMore`; não aceita query arbitrária.
+Agent/admin recebem fila de revisão humana (`NEEDS_REVIEW`) por padrão, com filtro de estado para exceções e acompanhamento. `RECEIVED`/`TRIAGE_PENDING` aparecem em visão operacional; `NEEDS_CLARIFICATION` pode ser acompanhado, mas não entra na fila humana comum até complemento ou pedido explícito. Requester recebe somente as próprias, ignorando filtro de `requesterId` enviado pelo cliente. Resposta inclui `items`, `nextCursor` e `hasMore`; não aceita query arbitrária.
 
 ### Detalhe e histórico
 
 `GET /api/v1/workspaces/{workspaceId}/requests/{requestId}`
 
-Retorna texto original apenas a membros autorizados do workspace, estado, versão, sugestão atual, tentativas em forma segura e histórico paginado/autorizado. Requester só acessa recurso de sua autoria.
+Retorna texto original apenas a membros autorizados do workspace, estado, versão, sugestão atual opcional, pergunta de clarificação opcional, motivo seguro de encaminhamento humano e histórico paginado/autorizado. Requester só acessa recurso de sua autoria.
 
 ### Revisar sugestão
 
@@ -45,7 +45,7 @@ Retorna texto original apenas a membros autorizados do workspace, estado, versã
 {"decision":"APPROVE_EDITED","expectedVersion":4,"category":"ACCESS","urgency":"HIGH","summary":"Acesso ao ambiente bloqueado."}
 ```
 
-Decisões `APPROVE`, `APPROVE_EDITED`, `REJECT`; agent/admin. Um review é imutável. Aprovação exige sugestão validada e versão atual. Rejeição conserva sugestão e mantém item disponível para classificação manual.
+Decisões `APPROVE`, `APPROVE_EDITED`, `REJECT`; agent/admin. Um review é imutável. Aprovação exige sugestão validada e versão atual. Quando `NEEDS_REVIEW` não tem sugestão, usar classificação manual. Rejeição conserva sugestão e mantém item disponível para classificação manual.
 
 ### Classificação manual
 
@@ -55,9 +55,19 @@ Decisões `APPROVE`, `APPROVE_EDITED`, `REJECT`; agent/admin. Um review é imut�
 {"expectedVersion":4,"category":"ACCESS","urgency":"HIGH","summary":"Acesso ao ambiente bloqueado.","reason":"..."}
 ```
 
-Agent/admin; registra autor e origem manual, transiciona para `OPEN` atomicamente com auditoria.
+Agent/admin; registra autor e origem manual, transiciona para `OPEN` atomicamente com auditoria. Fora de `NEEDS_REVIEW`, `reason` não pode ser vazio: é bypass explícito da análise da IA, por exemplo durante indisponibilidade do broker.
 
 Se worker estiver processando o mesmo pedido, decisão manual vence pela versão do pedido. Resultado tardio marca tentativa `OBSOLETE`, sem sugestão revisável ou mudança de estado.
+
+### Complementar informação ou pedir revisão humana
+
+`POST /api/v1/workspaces/{workspaceId}/requests/{requestId}/clarifications`
+
+Headers: `Idempotency-Key` com o mesmo escopo e regras de retenção da criação. Body: `{ "expectedVersion": 3, "text": "O erro é acesso negado ao entrar na conta de teste." }`. Somente requester autor em `NEEDS_CLARIFICATION`; texto é complemento imutável separado da origem, com 1–2.000 caracteres Unicode após trim. A operação grava texto, auditoria e novo `TriageRequested.v1` na mesma transação e leva a `TRIAGE_PENDING`. Uma única rodada automática é permitida; repetição idêntica da chave devolve o mesmo resultado, versão desatualizada retorna conflito.
+
+`POST /api/v1/workspaces/{workspaceId}/requests/{requestId}/human-review-requests`
+
+Body: `{ "expectedVersion": 3 }`. Somente requester autor em `NEEDS_CLARIFICATION`; leva a `NEEDS_REVIEW` sem sugestão, com motivo seguro `REQUESTER_REQUESTED_HUMAN`. Agent/admin continua autorizado a classificar manualmente mediante motivo explícito de bypass.
 
 ### Alterar estado operacional
 
@@ -84,3 +94,5 @@ Rejeição de sugestão bem-sucedida não agenda outra tentativa nem torna essa 
 ## Contrato do evento interno
 
 `TriageRequested.v1`: `{eventId,eventType,schemaVersion,occurredAt,workspaceId,requestId,correlationId,causationId}`. Sem texto, email, token ou conteúdo de prompt. Consumidor reabre dados autorizados pelo `requestId` e confere que `workspaceId` corresponde antes de executar. Versão desconhecida vai para DLQ sem tentativa de inferir payload.
+
+Resultado validado do provedor: `HUMAN_REVIEW` exige `category`, `urgency`, `summary`; `REQUEST_CLARIFICATION` exige `question` de 1–300 caracteres Unicode após trim e não cria sugestão. Pergunta que solicite credencial/segredo é inválida e vai ao humano sem sugestão. A primeira rota leva a `NEEDS_REVIEW` com sugestão; a segunda, a `NEEDS_CLARIFICATION`. Resposta incerta/inválida ou falha terminal leva a `NEEDS_REVIEW` sem sugestão, com código seguro (`AI_UNCERTAIN`, `AI_INVALID_OUTPUT`, `AI_UNAVAILABLE`, `AI_BUDGET_BLOCKED` ou `AI_OUTCOME_UNKNOWN`). Após um complemento, nova tentativa de clarificação também leva ao humano sem sugestão, com `CLARIFICATION_LIMIT`. Nenhuma dessas rotas fecha ou rejeita o pedido.

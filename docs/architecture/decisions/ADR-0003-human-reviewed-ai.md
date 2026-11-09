@@ -5,11 +5,11 @@
 
 ## Contexto
 
-Texto livre não é confiável e modelos podem classificar errado, retornar conteúdo inválido ou sofrer prompt injection. O objetivo de produto é triagem assistida, com controle e alternativa manual.
+Texto livre não é confiável e modelos podem classificar errado, pedir complemento desnecessário, retornar conteúdo inválido ou sofrer prompt injection. O objetivo é colocar o agente de IA antes da fila humana sem permitir que ele esconda ou encerre pedidos definitivamente.
 
 ## Decisão
 
-Provedor substituível `TriageProvider`; fake default; OpenAI opt-in, sintético e com cap de aplicação US$5/mês. Saída limitada a categoria/urgência/resumo, validada no servidor. Uma pessoa `AGENT`/`ADMIN` aprova, edita/aprova ou rejeita. Sugestão validada pode colocar pedido em `NEEDS_REVIEW`, mas IA nunca abre atendimento nem define classificação final. Timeout ambíguo não é retry cego. Avaliar baseline em conjunto sintético antes de propor limiar.
+Provedor substituível `TriageProvider`; fake default; OpenAI opt-in, sintético e com cap de aplicação US$5/mês. A IA retorna `HUMAN_REVIEW` com categoria/urgência/resumo, ou `REQUEST_CLARIFICATION` com pergunta, sempre validado no servidor. A primeira rota leva à revisão humana; a segunda pede uma única rodada de complemento ao requester. Requester pode pedir humano diretamente. Incerteza, falha, saída inválida e limite de complemento encaminham ao humano sem sugestão. Uma pessoa `AGENT`/`ADMIN` aprova, edita/aprova, rejeita ou classifica manualmente. IA nunca abre atendimento, descarta pedido ou define classificação final. Timeout ambíguo não é retry cego. Avaliar roteamento e classificação em conjunto sintético antes de propor limiar.
 
 ## Alternativas
 
@@ -20,7 +20,7 @@ Provedor substituível `TriageProvider`; fake default; OpenAI opt-in, sintético
 
 ## Consequências
 
-Sugestão e revisão são entidades distintas; UX mostra rascunho e fonte. Orçamento precisa de reserva atômica, preço/modelo configurado e limite na conta externa. Avaliação sintética não demonstra resultado em operação real.
+Sugestão, complemento e revisão são entidades distintas; UX mostra a etapa atual, pergunta ou rascunho e sua origem. O sistema precisa expor fila de exceções para revisão humana e permitir bypass manual auditado durante falha de infraestrutura. Orçamento precisa de reserva atômica, preço/modelo configurado e limite na conta externa. Avaliação sintética não demonstra resultado em operação real.
 
 ## Reavaliar
 

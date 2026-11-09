@@ -9,9 +9,10 @@ Este é o modelo conceitual da [Spec 001](../../specs/001-ai-assisted-request-tr
 | Workspace | Tenant e raiz da membership/autorização. |
 | Membership | Relação ativa entre subject autenticado e workspace, com papel `REQUESTER`, `AGENT` ou `ADMIN`. |
 | Solicitação | Texto original imutável, autor, estado operacional e versão concorrente. |
-| Fila de triagem / atendimento | Antes da classificação humana / após entrada em `OPEN`; sugestão não abre atendimento. |
+| Fila do agente de IA / revisão humana / atendimento | Antes da análise inicial / pedidos `NEEDS_REVIEW` com ou sem sugestão / após classificação humana em `OPEN`. |
 | Tentativa de triagem | Execução assíncrona, com seu próprio estado e metadados de provedor. |
 | Sugestão | Saída validada sintaticamente, ainda não confiável como decisão até revisão humana. |
+| Complemento | Pergunta da IA e resposta do requester, separadas do texto original; uma rodada automática no MVP. |
 | Revisão | Decisão imutável de agent/admin sobre uma sugestão/version, possivelmente com edição. |
 | Evento | Notificação versionada entre partes do sistema; não é fonte de verdade nem event sourcing. |
 
@@ -22,8 +23,8 @@ Categorias e estados estão na spec. Vocabulário novo é decidido com participa
 | Contexto | Responsabilidade | Proprietário dos dados |
 | --- | --- | --- |
 | Identity/workspace | Resolver subject OIDC, membership, papéis e workspace permitido | workspace, membership |
-| Requests | Criar e transicionar solicitações, histórico, fila e consultas | request, request audit, idempotency scope de criação |
-| Triage | Orquestrar tentativa, validar sugestão, revisão, orçamento e adapter IA | attempts, suggestions, reviews, usage/budget |
+| Requests | Criar e transicionar solicitações, complemento do requester, histórico, fila e consultas | request, request clarification, request audit, idempotency scope de criação/complemento |
+| Triage | Orquestrar primeira análise, pergunta, tentativa, sugestão, revisão, orçamento e adapter IA | attempts, suggestions, reviews, usage/budget |
 | Messaging | Outbox, publicação, inbox, retry e DLQ operacionais | outbox, inbox, delivery attempt |
 | API | Transporte HTTP, DTO, autenticação de borda e contrato OpenAPI | Sem estado de negócio próprio |
 
@@ -39,7 +40,7 @@ Keycloak autentica. A aplicação consulta membership ativo no banco em cada com
 
 Raiz de agregado: `Request`. Campos conceituais: `id`, `workspaceId`, `requesterSubject`, `originalText`, `status`, `version`, `createdAt`, `updatedAt`. Texto inicial imutável. O método de domínio/caso de uso valida transição; update condicional pela versão previne lost update. Requester lê somente próprias; agente/admin opera fila no workspace.
 
-`Request` não contém estado da tentativa IA. Sugestão, revisão e histórico são registros separados, porém suas alterações de workflow e audit ocorrem atomicamente. Uma sugestão não pode ser aprovada depois que request/suggestion/version deixou de ser elegível.
+`Request` não contém estado da tentativa IA. A primeira análise do worker escolhe entre `HUMAN_REVIEW` e `REQUEST_CLARIFICATION`; o servidor valida a rota. Uma sugestão válida leva à fila humana `NEEDS_REVIEW`; falta de contexto leva a `NEEDS_CLARIFICATION`. Requester pode complementar uma vez ou pedir humano diretamente. Incerteza/falha vai a `NEEDS_REVIEW` sem sugestão, nunca a encerramento automático. Sugestão, complemento, revisão e histórico são registros separados, porém suas alterações de workflow e audit ocorrem atomicamente. Uma sugestão não pode ser aprovada depois que request/suggestion/version deixou de ser elegível.
 
 Classificação manual pode vencer um worker em curso. O worker registra a tentativa como `OBSOLETE` e não cria sugestão revisável nem altera o pedido. Rejeição de sugestão não agenda nova triagem. `RESOLVED` é terminal na Spec 001; a [Spec 002](../../specs/002-service-workflow/spec.md) propõe reabertura controlada.
 
@@ -59,6 +60,7 @@ Registro imutável contém agente, decisão, valores aceitos/alterados, versão 
 - `request_audit_events(workspace_id,id,request_id,actor_type,actor_id,action,from_state,to_state,version,correlation_id,created_at,safe_metadata)`
 - `triage_attempts(workspace_id,id,request_id,attempt_no,status,provider,model,schema_version,prompt_version,started_at,finished_at,safe_error_code,correlation_id)` unique `(workspace_id,request_id,attempt_no)`
 - `triage_suggestions(workspace_id,id,request_id,attempt_id,category,urgency,summary,validation_status,created_at)`
+- `request_clarifications(workspace_id,id,request_id,attempt_id,question,answer,asked_at,answered_at)`
 - `triage_reviews(workspace_id,id,request_id,suggestion_id,reviewer_subject,decision,edited_values,created_at)`
 - `idempotency_records(scope_hash,key_hash,request_hash,response_ref,created_at,expires_at)` unique `(scope_hash,key_hash)`
 - `outbox_events(event_id,event_type,schema_version,workspace_id,aggregate_id,payload,status,attempts,next_attempt_at,lease_until,created_at,published_at)`

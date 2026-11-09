@@ -13,8 +13,8 @@ Monólito modular Spring Boot com PostgreSQL como fonte de verdade. Spring Modul
 | Módulo | Responsabilidade / dados próprios | Dependências permitidas |
 | --- | --- | --- |
 | `identity` | Resolver principal autenticado e acesso a workspace/membership/papel | Adaptador OIDC e porta consultada pelos casos de uso |
-| `requests` | Aggregate de solicitação, estados, auditoria, fila e comandos manuais | Porta de autorização; publica intenção de triagem via API local/outbox |
-| `triage` | Tentativas, sugestão, validação, aprovação, orçamento e porta do provedor | `requests` por API pública, não por tabela interna |
+| `requests` | Aggregate de solicitação, complemento do requester, estados, auditoria, fila e comandos manuais | Porta de autorização; publica intenção de triagem via API local/outbox |
+| `triage` | Primeira análise, rota humano/complemento, tentativas, sugestão, validação, aprovação, orçamento e porta do provedor | `requests` por API pública, não por tabela interna |
 | `messaging` | Outbox, dispatcher Rabbit, inbox, retry, DLQ e métricas | Contratos de evento versionados e casos de uso públicos |
 | `api` | REST, validação de transporte, mapeamento de erros e OpenAPI | APIs públicas de aplicação |
 
@@ -42,6 +42,7 @@ Esboço lógico, não esquema SQL final:
 - `request_audit(workspace_id,request_id,actor,action,from_state,to_state,version,correlation_id,created_at,metadata)`.
 - `triage_attempt(workspace_id,id,request_id,attempt_no,status,provider,model,safe_error_code,usage,cost,...)`.
 - `triage_suggestion(workspace_id,id,request_id,attempt_id,schema_version,prompt_version,category,urgency,summary,validation_status,...)`.
+- `request_clarification(workspace_id,id,request_id,question,answer,asked_at,answered_at,attempt_id)`; `requests` protege resposta/autoria, `triage` fornece pergunta pela API pública. Complemento é separado do texto original e nunca entra no evento.
 - `triage_review(workspace_id,id,request_id,suggestion_id,reviewer_subject,decision,edited_values,...)`.
 - `idempotency_record(scope_hash,key_hash,request_hash,response_ref,expires_at)`.
 - `outbox_event(event_id,event_type,schema_version,aggregate_id,workspace_id,payload,status,attempts,next_attempt_at,lease_until,...)`.
@@ -56,20 +57,21 @@ Usar FK compostas `(workspace_id, request_id)` em tabelas dependentes para bloqu
 2. Uma transação grava request `RECEIVED`, evento de auditoria, outbox `TriageRequested.v1` e resultado idempotente.
 3. Dispatcher reivindica lote pequeno por lease/lock, publica mensagem persistente com `mandatory=true` e `correlationId`.
 4. Registrar handlers de `basic.return` e publisher confirm. Confirmação sem retorno permite marcar publicado; retorno de não roteável mantém evento pendente com alerta/erro operacional. Não confundir broker confirm com roteamento.
-5. Worker valida envelope/versão, reinspeciona membership/status pelo caso de uso do sistema e obtém lock/idempotência. Faz a chamada de triagem fora da transação de banco.
-6. Ao receber resposta, valida schema e regras e grava tentativa, sugestão ou falha antes do ACK. Inbox e efeito são atômicos no PostgreSQL. Se classificação humana venceu enquanto o worker processava, gravar tentativa `OBSOLETE` sem sugestão revisável nem transição do pedido; preservar metadados seguros de custo/uso da chamada já feita.
-7. Erro transitório conhecido (p.ex. 429 com retry-after ou indisponibilidade antes de envio) agenda retry limitado com `next_attempt_at`; erro permanente vai a DLQ. Erro de transporte depois do envio, sem saber se provedor concluiu, resulta em `OUTCOME_UNKNOWN`, sem retry automático.
-8. Operador/agent autorizado pode iniciar reprocesso explícito, com aviso de possível duplicação/custo e nova tentativa auditada.
+5. Worker valida envelope/versão, reinspeciona workspace/status pelo caso de uso do sistema e obtém lock/idempotência. Faz a primeira análise fora da transação de banco.
+6. Ao receber resposta, valida rota e campos: `HUMAN_REVIEW` grava sugestão e leva a `NEEDS_REVIEW`; `REQUEST_CLARIFICATION` grava pergunta e leva a `NEEDS_CLARIFICATION` somente na primeira rodada. Complemento do requester é gravado com nova outbox e reprocessado uma vez; nova falta de contexto, incerteza, saída inválida ou falha terminal leva a `NEEDS_REVIEW` sem sugestão. Inbox e efeito são atômicos no PostgreSQL. Se classificação humana venceu enquanto o worker processava, gravar tentativa `OBSOLETE` sem sugestão revisável nem transição do pedido; preservar metadados seguros de custo/uso da chamada já feita.
+7. Requester em `NEEDS_CLARIFICATION` pode pedir humano diretamente. Broker indisponível deixa outbox pendente; agent/admin pode fazer bypass manual explícito com motivo, e worker tardio não sobrescreve.
+8. Erro transitório conhecido (p.ex. 429 com retry-after ou indisponibilidade antes de envio) agenda retry limitado com `next_attempt_at`; erro permanente vai a DLQ e encaminha pedido ao humano. Erro de transporte depois do envio, sem saber se provedor concluiu, resulta em `OUTCOME_UNKNOWN`, sem retry automático, e pedido fica visível ao humano.
+9. Operador/agent autorizado pode iniciar reprocesso explícito, com aviso de possível duplicação/custo e nova tentativa auditada quando elegível.
 
 O delivery é at-least-once. Há janela inevitável entre efeito externo e persistência local: nenhuma chave de inbox elimina cobrança duplicada do provedor se o processo cair depois da resposta. Por isso timeout ambíguo é tratado como estado, não como retry cego. Retenção, reprocesso e remoção de mensagem devem ser documentados.
 
 ## 5. IA, avaliação e orçamento
 
-Interface interna `TriageProvider` retorna objeto limitado: category, urgency, summary. Adapter fake fornece resultados determinísticos e não usa rede. Adapter OpenAI usa API de respostas com saída estruturada/JSON Schema estrito quando habilitado; o servidor valida domínio/schema mesmo assim. Referência de formato: [Structured Outputs (OpenAI)](https://developers.openai.com/api/docs/guides/structured-outputs).
+Interface interna `TriageProvider` retorna rota limitada: `HUMAN_REVIEW` com category, urgency e summary, ou `REQUEST_CLARIFICATION` com uma question. Adapter fake fornece resultados determinísticos e não usa rede. Adapter OpenAI usa API de respostas com saída estruturada/JSON Schema estrito quando habilitado; o servidor valida domínio/schema mesmo assim. Resposta inválida ou incerta vai ao humano. Referência de formato: [Structured Outputs (OpenAI)](https://developers.openai.com/api/docs/guides/structured-outputs).
 
-Configuração live exige `OPENAI_LIVE_ENABLED=true`, `OPENAI_API_KEY`, `OPENAI_MODEL` fixado explicitamente e uso de dados sintéticos. Teto didático: US$5/mês no contador do app. Para chamadas concorrentes, reservar custo conservador antes do envio com preço e tokens máximos configurados, impedir overspend, reconciliar uso/custo reportado depois; parada fechada se preço/modelo não estiver configurado. Configurar também limite de gasto no projeto OpenAI. Fake fica como opção padrão em dev/CI.
+Configuração live exige `OPENAI_LIVE_ENABLED=true`, `OPENAI_API_KEY`, `OPENAI_MODEL` fixado explicitamente e uso de dados sintéticos. Teto didático: US$5/mês no contador do app. Para chamadas concorrentes, reservar custo conservador antes do envio com preço e tokens máximos configurados, impedir overspend, reconciliar uso/custo reportado depois; bloquear chamada externa se preço/modelo não estiver configurado e encaminhar pedido ao humano sem sugestão. Configurar também limite de gasto no projeto OpenAI. Fake fica como opção padrão em dev/CI.
 
-Dataset inicial versionado em formato sem dados pessoais. Dois rótulos independentes e adjudicação documentada; separar exemplos de desenvolvimento e avaliação. Reportar macro-F1 e matriz por categoria, urgência (erro ordinal e matriz), schema-valid rate, latência e custo por item. Sumarização recebe rubric factual com amostra revisada manualmente. Resultado inicial vira baseline; só depois discutir limiar útil ao objetivo didático. Sem alegar que benchmark sintético prova desempenho em operação real.
+Dataset inicial versionado em formato sem dados pessoais. Dois rótulos independentes e adjudicação documentada; separar exemplos de desenvolvimento e avaliação. Reportar matriz de roteamento humano/complemento, taxa de pedidos úteis retidos para complemento, macro-F1 por categoria, urgência (erro ordinal e matriz), schema-valid rate, latência e custo por item. Pergunta de clarificação e sumarização recebem rubric factual com amostra revisada manualmente. Resultado inicial vira baseline; só depois discutir limiar útil ao objetivo didático. Sem alegar que benchmark sintético prova desempenho em operação real.
 
 ## 6. Segurança e observabilidade
 

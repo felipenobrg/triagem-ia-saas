@@ -11,6 +11,7 @@ Antes de alterar comportamento, leia a constituição, spec ativa, plano e taref
 - Respeitar boundaries Spring Modulith. Não acessar tabela/internal de outro módulo por conveniência.
 - Autorização sempre considera membership ativo em workspace. IDs/claims vindos do cliente não autorizam acesso.
 - IA fake por padrão e em testes; chamada OpenAI só com opt-in explícito e cap configurado. Nunca pôr segredo no repo.
+- O agente de IA analisa primeiro e roteia para revisão humana ou um pedido de complemento. Não pode fechar/descartar solicitação; requester pode pedir humano e falha/incerteza segue para humano sem sugestão.
 - Eventos são at-least-once e sem texto de solicitação. Nunca afirmar exactly-once. Efeitos externos de resultado ambíguo exigem estado explícito, não retry cego.
 - RAG, MCP e cloud são extensões fora do MVP e necessitam spec/decisão próprias.
 - Commits Conventional Commits em inglês. Não incluir trailer `Co-authored-by`.
