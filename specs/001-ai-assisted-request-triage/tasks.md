@@ -25,6 +25,7 @@ Todas as tarefas estão **planejadas**, não implementadas. Concluir significa e
 - [ ] **T204** Implementar criação idempotente: escopo subject+workspace+operação, hash chave e corpo canonicalizado; mesmo pedido retorna resultado original, corpo divergente conflita. `FR-005`
 - [ ] **T205** Criar telas fluxo requester e fila agent/admin, detalhe/histórico, filtros limitados e paginação cursor. `FR-003`, `FR-007`
 - [ ] **T206** Revisão e classificação manual com autorização, `expectedVersion`, audit trail e disputa concorrente. `FR-009–010`, `NFR-004`
+- [ ] **T208** Demonstrar corrida entre classificação manual e worker: humano vence, tentativa tardia `OBSOLETE`, sem sugestão revisável ou regressão de estado. `FR-008`, `BR-004`, `BR-007`.
 - [ ] **T207** Testes negativos por papel e workspace em toda rota/query relevante; manter fixtures sem dados reais. `FR-002–004`, `NFR-002`
 
 ## M3 — Outbox, RabbitMQ e recuperação

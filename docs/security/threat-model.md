@@ -39,3 +39,17 @@ Ativos: identidade/refresh access local, memberships, solicitação, histórico,
 ## Operação e aceitação
 
 Demo não deve usar dado pessoal/corporativo. Para qualquer AWS sandbox futuro: rever threat model com região/preço atuais, ingress e identidades autorizadas, budget/alertas, secrets, backup e restore, retenção, contato responsável e teardown. Evidência local não prova segurança de piloto real.
+
+## Extensão proposta: gestão do atendimento (Spec 002)
+
+Os controles abaixo são requisitos de teste, não proteção implementada:
+
+| Risco | Cenário | Evidência exigida |
+| --- | --- | --- |
+| Atribuição cruzada | Assumir/transferir para subject sem membership ativo ou de outro workspace | Testes negativos de papel/workspace e desatribuição atômica ao remover membro |
+| Disputa de responsáveis | Dois agentes assumem a mesma versão | Integração com PostgreSQL real: um commit, um conflito, uma auditoria |
+| Manipulação de prazo | Cliente envia prioridade, `dueAt`, pausa ou tempo consumido | Servidor deriva valores com relógio injetável; payload de autoridade rejeitado |
+| Pausa indevida | Agente pausa sem pergunta ou requester diferente responde | Testes de estado, autorização, autoria e texto obrigatório |
+| Vazamento por duplicado | ID de pedido canônico aparece para outro requester | Testes de vínculo cross-tenant e projeção de resposta por papel, inclusive cursor/histórico |
+| Corrida com IA | Worker atrasado reabre triagem após decisão manual | Teste de versão: tentativa `OBSOLETE`, pedido e ciclo inalterados |
+| Texto livre em observabilidade | Pergunta, resposta, motivo ou nota de resolução entra em evento/log | Inspeção automatizada de payloads e logs sintéticos |

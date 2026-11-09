@@ -9,6 +9,7 @@ Este é o modelo conceitual da [Spec 001](../../specs/001-ai-assisted-request-tr
 | Workspace | Tenant e raiz da membership/autorização. |
 | Membership | Relação ativa entre subject autenticado e workspace, com papel `REQUESTER`, `AGENT` ou `ADMIN`. |
 | Solicitação | Texto original imutável, autor, estado operacional e versão concorrente. |
+| Fila de triagem / atendimento | Antes da classificação humana / após entrada em `OPEN`; sugestão não abre atendimento. |
 | Tentativa de triagem | Execução assíncrona, com seu próprio estado e metadados de provedor. |
 | Sugestão | Saída validada sintaticamente, ainda não confiável como decisão até revisão humana. |
 | Revisão | Decisão imutável de agent/admin sobre uma sugestão/version, possivelmente com edição. |
@@ -39,6 +40,8 @@ Keycloak autentica. A aplicação consulta membership ativo no banco em cada com
 Raiz de agregado: `Request`. Campos conceituais: `id`, `workspaceId`, `requesterSubject`, `originalText`, `status`, `version`, `createdAt`, `updatedAt`. Texto inicial imutável. O método de domínio/caso de uso valida transição; update condicional pela versão previne lost update. Requester lê somente próprias; agente/admin opera fila no workspace.
 
 `Request` não contém estado da tentativa IA. Sugestão, revisão e histórico são registros separados, porém suas alterações de workflow e audit ocorrem atomicamente. Uma sugestão não pode ser aprovada depois que request/suggestion/version deixou de ser elegível.
+
+Classificação manual pode vencer um worker em curso. O worker registra a tentativa como `OBSOLETE` e não cria sugestão revisável nem altera o pedido. Rejeição de sugestão não agenda nova triagem. `RESOLVED` é terminal na Spec 001; a [Spec 002](../../specs/002-service-workflow/spec.md) propõe reabertura controlada.
 
 ### Triage Attempt e Suggestion
 
@@ -71,3 +74,7 @@ Envelope `eventId`, `eventType`, `schemaVersion`, `occurredAt`, `workspaceId`, `
 Eventos possíveis: `TriageRequested.v1`, `TriageCompleted.v1`, `TriageFailed.v1`, `SuggestionReviewed.v1`, `RequestStatusChanged.v1`. Publicação é outbox + Rabbit; at-least-once. Não se reconstrói estado do produto pelo log de eventos.
 
 `ListQueue` e `GetRequestDetails` são consultas autorizadas; `CreateRequest`, `ReviewSuggestion` e `ChangeRequestStatus` são comandos que aplicam invariantes. Inicialmente usam PostgreSQL compartilhado e consistência transacional. Projeções assíncronas só entram se medição justificar atraso e custo de reconstrução.
+
+## Evolução proposta: gestão do atendimento
+
+A [Spec 002](../../specs/002-service-workflow/spec.md) acrescenta ao contexto `requests` responsável ativo, impacto confirmado, prioridade calculada/efetiva, ciclo de prazo, pausa, pergunta/resposta, resolução, reabertura e vínculo duplicado. Cada ciclo preserva consumo e violação; reabertura cria ciclo novo. Desativar membership do responsável exige desatribuição transacional por API pública entre `identity` e `requests`. Vínculos de duplicado têm FK composta por workspace e nunca autorizam requester a ler pedido alheio. O [ADR-0006](decisions/ADR-0006-service-workflow.md) registra os limites. Nada disso foi implementado.

@@ -1,6 +1,6 @@
 # Spec 001: Triagem assistida de solicitações
 
-- **Estado:** pronta para revisão dos participantes; ainda não aprovada como produto
+- **Estado:** pronta para revisão dos participantes; ainda não aprovada como produto. [Spec 002](../002-service-workflow/spec.md) propõe evolução do atendimento após a base manual.
 - **Data:** 2026-10-06
 - **Alvo:** MVP didático local, com dados sintéticos
 - **Fonte de verdade:** este documento define comportamento. `plan.md` define a abordagem técnica; `tasks.md` rastreia execução.
@@ -43,6 +43,7 @@ Keycloak autentica a identidade. A associação e o papel no workspace são mant
 
 - **Workspace:** limite de isolamento, associação e autorização.
 - **Solicitação:** texto original imutável, estado operacional e histórico.
+- **Fila de triagem:** solicitações recebidas/pendentes que um agent/admin pode classificar manualmente ou revisar. **Fila de atendimento:** solicitações em `OPEN` ou `IN_PROGRESS` após decisão humana. Uma sugestão pode mudar estado de preparação para `NEEDS_REVIEW`, mas não abre atendimento sozinha.
 - **Triagem:** tentativa de produzir uma sugestão; não é o estado da solicitação.
 - **Sugestão:** categoria, urgência e resumo não confiáveis até revisão humana.
 - **Revisão:** decisão de uma pessoa agente, registrada e vinculada à versão da sugestão.
@@ -78,15 +79,17 @@ Estados de solicitação:
 | `NEEDS_REVIEW` | `OPEN` | Agent/admin aprova ou edita e aprova sugestão |
 | `NEEDS_REVIEW` | `RECEIVED` | Agent/admin rejeita sugestão; registrar rejeição e permitir triagem manual |
 | `OPEN` | `IN_PROGRESS` | Agent/admin |
-| `IN_PROGRESS` | `OPEN`, `RESOLVED` | Agent/admin; reabertura exige registro |
+| `IN_PROGRESS` | `OPEN`, `RESOLVED` | Agent/admin; retorno a `OPEN` exige motivo e registro |
 
-Tentativa de triagem: `QUEUED`, `PROCESSING`, `SUCCEEDED`, `RETRY_SCHEDULED`, `FAILED`, `OUTCOME_UNKNOWN`. Timeout após envio ao provedor pode significar que a chamada foi processada: marcar `OUTCOME_UNKNOWN`, não repetir automaticamente chamada potencialmente cobrada. Solicitação permanece utilizável manualmente.
+`RESOLVED` é terminal nesta spec. A [Spec 002](../002-service-workflow/spec.md) introduz reabertura com janela, motivo e novo ciclo de atendimento. Rejeitar sugestão e voltar a `RECEIVED` não agenda nova triagem automaticamente; reprocesso exige comando explícito elegível.
+
+Tentativa de triagem: `QUEUED`, `PROCESSING`, `SUCCEEDED`, `RETRY_SCHEDULED`, `FAILED`, `OUTCOME_UNKNOWN`, `OBSOLETE`. `OBSOLETE` significa que uma decisão humana venceu enquanto a tentativa processava; eventual resultado tardio não gera sugestão revisável nem altera solicitação. Timeout após envio ao provedor pode significar que a chamada foi processada: marcar `OUTCOME_UNKNOWN`, não repetir automaticamente chamada potencialmente cobrada. Solicitação permanece utilizável manualmente.
 
 ### Triagem por IA
 
 - **FR-011 — Produzir sugestão:** solicitar somente categoria, urgência e resumo curto. Não exigir nem armazenar raciocínio privado do modelo.
 - **FR-012 — Validar no servidor:** validar schema, enums, limites de tamanho e estado da solicitação; schema estruturado do provedor não substitui validação de domínio.
-- **FR-013 — Aprovação humana:** modelo não altera estado operacional. Somente agent/admin pode aceitar, editar e aceitar ou rejeitar uma sugestão válida.
+- **FR-013 — Aprovação humana:** modelo pode levar a `NEEDS_REVIEW`, mas não abre atendimento nem define classificação final. Somente agent/admin pode aceitar, editar e aceitar ou rejeitar uma sugestão válida.
 - **FR-014 — Provedor substituível:** domínio depende de uma porta `TriageProvider`. Fake é o padrão local e obrigatório nos testes; chamadas reais são opt-in.
 - **FR-015 — Proteger custo:** OpenAI real exige `OPENAI_LIVE_ENABLED=true`, chave em variável local não versionada e orçamento mensal da aplicação de US$5. Reservar margem/custo máximo antes da chamada, reconciliar uso informado após resposta e bloquear novas chamadas ao atingir o limite. Se o custo não puder ser estimado com segurança, bloquear a chamada. Limite do app não substitui limite configurado na conta do provedor.
 - **FR-016 — Minimizar e rastrear:** enviar apenas texto necessário; guardar provedor/modelo, versões de schema e prompt, uso/custo reportado, tempo, status e correlation ID. Não registrar segredo, prompt completo ou corpo original em logs.
@@ -105,7 +108,7 @@ Tentativa de triagem: `QUEUED`, `PROCESSING`, `SUCCEEDED`, `RETRY_SCHEDULED`, `F
 - **BR-001:** workspace e membership ativo são obrigatórios em toda leitura/escrita de negócio.
 - **BR-002:** requester nunca revisa sugestão nem acessa solicitação de outro requester.
 - **BR-003:** texto original, decisão humana e sugestão são registros distintos.
-- **BR-004:** nenhuma sugestão altera fila ou estado sem decisão humana.
+- **BR-004:** sugestão pode colocar pedido em `NEEDS_REVIEW` na fila de triagem, mas não define classificação final, não leva a `OPEN` e não altera fila de atendimento sem decisão humana.
 - **BR-005:** cada sugestão e tentativa pertence a um único request/workspace; o modelo não define identidade, workspace ou permissão.
 - **BR-006:** falha de IA/broker/cota não remove a solicitação nem impede classificação manual.
 - **BR-007:** repetição de evento não duplica sugestão, decisão ou auditoria de negócio.
@@ -147,6 +150,8 @@ Detalhamento e envelope de erro em [`api-contract.md`](api-contract.md). Todos o
 10. **Saída inválida:** JSON/schema/enum/limite inválido não vira sugestão revisável.
 11. **Aprovação:** sugestão válida só entra em `OPEN` após decisão de agent/admin e histórico registra ambos os valores.
 12. **Sem dados reais:** fixtures, logs, capturas e avaliação não incluem dados pessoais ou corporativos.
+13. **Corrida manual/IA:** classificação manual em `TRIAGE_PENDING` vence resultado tardio do worker; tentativa vira `OBSOLETE` e pedido permanece `OPEN` com decisão humana.
+14. **Rejeição:** rejeitar sugestão retorna a `RECEIVED` sem novo evento automático de triagem; caminho manual continua disponível.
 
 ## 10. Referências normativas e decisão pendente
 

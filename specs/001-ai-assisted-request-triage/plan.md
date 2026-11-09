@@ -57,7 +57,7 @@ Usar FK compostas `(workspace_id, request_id)` em tabelas dependentes para bloqu
 3. Dispatcher reivindica lote pequeno por lease/lock, publica mensagem persistente com `mandatory=true` e `correlationId`.
 4. Registrar handlers de `basic.return` e publisher confirm. Confirmação sem retorno permite marcar publicado; retorno de não roteável mantém evento pendente com alerta/erro operacional. Não confundir broker confirm com roteamento.
 5. Worker valida envelope/versão, reinspeciona membership/status pelo caso de uso do sistema e obtém lock/idempotência. Faz a chamada de triagem fora da transação de banco.
-6. Ao receber resposta, valida schema e regras e grava tentativa, sugestão ou falha antes do ACK. Inbox e efeito são atômicos no PostgreSQL.
+6. Ao receber resposta, valida schema e regras e grava tentativa, sugestão ou falha antes do ACK. Inbox e efeito são atômicos no PostgreSQL. Se classificação humana venceu enquanto o worker processava, gravar tentativa `OBSOLETE` sem sugestão revisável nem transição do pedido; preservar metadados seguros de custo/uso da chamada já feita.
 7. Erro transitório conhecido (p.ex. 429 com retry-after ou indisponibilidade antes de envio) agenda retry limitado com `next_attempt_at`; erro permanente vai a DLQ. Erro de transporte depois do envio, sem saber se provedor concluiu, resulta em `OUTCOME_UNKNOWN`, sem retry automático.
 8. Operador/agent autorizado pode iniciar reprocesso explícito, com aviso de possível duplicação/custo e nova tentativa auditada.
 
@@ -84,7 +84,7 @@ Dataset inicial versionado em formato sem dados pessoais. Dois rótulos independ
 
 Trabalhar em fatias verticais. Em cada fatia, definir driver e reviewer; alternar a cada incremento. Os dois implementam e revisam backend e frontend ao longo do projeto, com ao menos uma autoria e uma revisão de PR em cada camada por pessoa. O driver apresenta requisito, trade-off, evidência de teste e limitação; reviewer registra riscos e alternativa. PR identifica os requisitos e autoria individual sem trailer de coautoria.
 
-Sequência de aprendizagem: linguagem/invariantes e estados → boundaries/DDD → API e idempotência → OIDC/tenant → transação/concorrência → outbox/eventos/Rabbit/retry → adaptador IA/orçamento/avaliação → observabilidade, threat model e demo. DDD começa em linguagem ubíqua, bounded contexts e invariantes; CQRS separa intenção de alteração e leitura, sem impor complexidade de infraestrutura.
+Sequência de aprendizagem: linguagem/invariantes e estados → boundaries/DDD → API e idempotência → OIDC/tenant → transação/concorrência → outbox/eventos/Rabbit/retry → adaptador IA/orçamento/avaliação → observabilidade, threat model e demo. A [Spec 002](../002-service-workflow/spec.md) pode começar após identidade, criação, classificação manual e auditoria; RabbitMQ/IA não bloqueiam o primeiro incremento de atendimento. DDD começa em linguagem ubíqua, bounded contexts e invariantes; CQRS separa intenção de alteração e leitura, sem impor complexidade de infraestrutura.
 
 ## 8. Extensões futuras, separadas por especificação
 

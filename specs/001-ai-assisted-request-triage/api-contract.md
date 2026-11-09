@@ -7,7 +7,7 @@ Contrato funcional da Spec 001. Antes da primeira implementação, publicar Open
 - Prefixo `/api/v1`; JSON UTF-8; token `Authorization: Bearer <OIDC access token>`.
 - `workspaceId` seleciona contexto; servidor valida membership e papel em cada chamada.
 - IDs opacos; datas RFC 3339 UTC. Listas usam cursor opaco, `limit` limitado no servidor e ordenação estável por `(createdAt,id)`.
-- Escritas de estado recebem `If-Match: <version>` (ou campo `expectedVersion` se o framework não suportar ETag). Concorrência perdida responde `409 VERSION_CONFLICT`.
+- Escritas de estado recebem `expectedVersion` inteiro positivo no JSON. Concorrência perdida responde `409 VERSION_CONFLICT`. Este contrato usa um único mecanismo; OpenAPI deve refletir isso.
 - Erros: `{ "error": { "code": "...", "message": "...", "correlationId": "...", "details": {} } }`. `details` nunca inclui conteúdo de outro tenant ou segredo.
 - `401` token ausente/inválido; `403` papel insuficiente; `404` recurso ausente ou fora do workspace; `409` conflito de chave/versão/estado; `422` validação; `429` limite de uso; `503` dependência necessária indisponível.
 
@@ -57,11 +57,29 @@ Decisões `APPROVE`, `APPROVE_EDITED`, `REJECT`; agent/admin. Um review é imut�
 
 Agent/admin; registra autor e origem manual, transiciona para `OPEN` atomicamente com auditoria.
 
+Se worker estiver processando o mesmo pedido, decisão manual vence pela versão do pedido. Resultado tardio marca tentativa `OBSOLETE`, sem sugestão revisável ou mudança de estado.
+
+### Alterar estado operacional
+
+`POST /api/v1/workspaces/{workspaceId}/requests/{requestId}/status-transitions`
+
+```json
+{"expectedVersion":5,"toStatus":"IN_PROGRESS","reason":"Atendimento iniciado."}
+```
+
+Agent/admin; somente transições da tabela da Spec 001. `reason` é obrigatório para `IN_PROGRESS → OPEN`; estado inválido retorna `409 INVALID_TRANSITION`. `RESOLVED` é terminal na Spec 001; reabertura é definida na Spec 002.
+
+### Administrar membros
+
+`POST /api/v1/workspaces/{workspaceId}/memberships` associa subject OIDC já existente a papel `REQUESTER`, `AGENT` ou `ADMIN`; somente admin. `PATCH /api/v1/workspaces/{workspaceId}/memberships/{subject}` altera papel/status com `expectedVersion` da membership. Remover/rebaixar último admin ativo retorna `409 LAST_ADMIN`. O servidor verifica subject e workspace, registra auditoria e nunca confia em papel do token como autorização de produto. A Spec 002 acrescenta desatribuição atômica quando responsável perde papel.
+
 ### Repetir triagem
 
 `POST /api/v1/workspaces/{workspaceId}/requests/{requestId}/triage-retries`
 
 Agent/admin. Só permitido para tentativa `FAILED` ou `RETRY_SCHEDULED`, sem trabalho já em curso. `OUTCOME_UNKNOWN` exige confirmação humana explícita no body (`confirmPossibleDuplicateCharge: true`) e usa nova chave de operação; o sistema mostra aviso de chamada possivelmente já cobrada.
+
+Rejeição de sugestão bem-sucedida não agenda outra tentativa nem torna essa rota elegível automaticamente. O pedido segue disponível para classificação manual.
 
 ## Contrato do evento interno
 

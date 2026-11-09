@@ -9,7 +9,7 @@ Texto livre não é confiável e modelos podem classificar errado, retornar cont
 
 ## Decisão
 
-Provedor substituível `TriageProvider`; fake default; OpenAI opt-in, sintético e com cap de aplicação US$5/mês. Saída limitada a categoria/urgência/resumo, validada no servidor. Uma pessoa `AGENT`/`ADMIN` aprova, edita/aprova ou rejeita. IA nunca muda estado operacional. Timeout ambíguo não é retry cego. Avaliar baseline em conjunto sintético antes de propor limiar.
+Provedor substituível `TriageProvider`; fake default; OpenAI opt-in, sintético e com cap de aplicação US$5/mês. Saída limitada a categoria/urgência/resumo, validada no servidor. Uma pessoa `AGENT`/`ADMIN` aprova, edita/aprova ou rejeita. Sugestão validada pode colocar pedido em `NEEDS_REVIEW`, mas IA nunca abre atendimento nem define classificação final. Timeout ambíguo não é retry cego. Avaliar baseline em conjunto sintético antes de propor limiar.
 
 ## Alternativas
 

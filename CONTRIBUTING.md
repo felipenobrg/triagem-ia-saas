@@ -13,6 +13,8 @@ Desenvolvimento guiado por specs; leia [AGENTS.md](AGENTS.md) e a [constituiçã
 
 Use os modelos em [`specs/templates/`](specs/templates/) para novas propostas. Estado deve ser explícito: proposta, pronta para revisão, em andamento, aceita, adiada ou substituída. Só owner/participantes podem mover proposta para aceita; agente não presume aceite.
 
+Para começar com os participantes, use o [guia da mentoria](docs/mentoring-guide.md). A [Spec 002](specs/002-service-workflow/spec.md) amplia o produto com atendimento e ainda precisa de revisão das regras de prazo e prioridade antes do código. O primeiro PR executável continua sendo o esqueleto T101 da Spec 001.
+
 ## Checklist de spec
 
 - Problema, objetivo e fora de escopo definidos.

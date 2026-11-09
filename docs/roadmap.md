@@ -1,5 +1,7 @@
 # Roadmap após MVP
 
+A [Spec 002: Gestão do atendimento](../specs/002-service-workflow/spec.md) é evolução funcional proposta para a mentoria. Ela pode começar após o fluxo manual da Spec 001 e não depende de RAG, MCP ou cloud. Suas regras e tarefas ainda não foram implementadas. Os tópicos abaixo são estudos posteriores.
+
 Tudo abaixo é hipótese/estudo posterior, não capacidade atual nem parte do aceite local. Cada extensão começa por problema mensurável, spec própria, threat model e aceite.
 
 ## RAG — só se baseline justificar
