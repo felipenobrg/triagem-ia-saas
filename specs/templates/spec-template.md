@@ -1,56 +1,68 @@
-# Spec NNN: <nome>
+# Spec NNN: <nome da capacidade>
 
-> **Modelo para estudo:** copie este arquivo para um problema fictício e substitua os campos. Descreva resultados que outra pessoa consiga observar; uma tecnologia escolhida não é requisito de produto.
+> **Modelo para estudo:** copie este arquivo para um problema fictício e substitua cada campo. Descreva resultados que outra pessoa consiga observar; uma tecnologia escolhida não é requisito de produto. Nada aqui deve ser apresentado como sistema em operação.
 
-- Estado: proposta | pronta para revisão | em andamento | aceita | adiada | substituída
-- Owner:
-- Data:
-- Fonte de verdade:
+- **Estado:** proposta | pronta para revisão | em andamento | aceita | adiada | substituída
+- **Data:**
+- **Depende de:**
+- **Fonte de verdade:** este documento define comportamento. `plan.md` define abordagem técnica; `api-contract.md` detalha o contrato; `tasks.md` rastreia execução.
 
-## Problema e evidência
+## 1. Problema e objetivo
 
-<!-- Explique quem sente o problema, mostre um exemplo sintético e separe observação de hipótese. -->
+<!-- Quem sente o problema, um exemplo sintético concreto e o que separa observação de hipótese. -->
 
-## Objetivos
+## 2. Escopo
 
-## Fora de escopo
+### Incluído
 
-## Atores, identidade e autorização
+### Fora de escopo
 
-<!-- Para cada ator, diga o que pode ler, escrever e fazer quando pertence a outro workspace. -->
+## 3. Atores, identidade e autorização
 
-## Linguagem do domínio e invariantes
+<!-- Para cada ator: o que lê, o que escreve e o que acontece quando o recurso pertence a outro workspace. -->
 
-## Requisitos funcionais
+| Papel | Permissões |
+| --- | --- |
 
-- **FR-001 — <título>:** <resultado observável>
+## 4. Linguagem do domínio e invariantes
 
-## Regras de negócio
+<!-- Termos com significado único no código, na API e na conversa com a dupla. -->
 
-- **BR-001:**
+## 5. Requisitos funcionais
 
-## Estados e transições
+- **FRn-001 — <título>:** <resultado observável, verificável por teste>
 
-<!-- Liste estado de origem, destino, autor, pré-condições e resultado em caso de conflito. -->
+## 6. Regras de negócio
 
-## Contratos
+- **BRn-001:**
 
-API/eventos/dados e regras de compatibilidade; incluir idempotência e concorrência.
+## 7. Estados e transições
 
-## Falhas, retry e recuperação
+<!-- Estado de origem, destino, autor, pré-condição, versão exigida e resultado em caso de conflito. -->
 
-## Requisitos de qualidade
+| De | Para | Quem e condição |
+| --- | --- | --- |
 
-- **NFR-001:** métrica ou inspeção objetiva, condições e evidência.
+## 8. Contratos
 
-## Cenários de aceite
+<!-- API, eventos e dados; compatibilidade, idempotência e concorrência. Detalhe em api-contract.md. -->
 
-<!-- Inclua sucesso, falha, concorrência e acesso indevido; cada cenário deve poder virar teste. -->
+## 9. Falhas, retry e recuperação
 
-**Dado** ... **Quando** ... **Então** ...
+<!-- Inclua o caso ambíguo: a chamada pode ter sido processada. Diga qual estado explícito guarda isso. -->
 
-## Segurança, privacidade e custo
+## 10. Requisitos de qualidade
 
-## Premissas e questões abertas
+- **NFRn-001:** métrica ou inspeção objetiva, condição de medição e evidência esperada.
 
-## Referências
+## 11. Cenários de aceite
+
+<!-- Sucesso, autorização indevida, concorrência e falha. Cada cenário precisa poder virar teste. -->
+
+1. **<nome>:** **Dado** ... **Quando** ... **Então** ...
+
+## 12. Segurança, privacidade e custo
+
+## 13. Premissas e questões abertas
+
+## 14. Referências

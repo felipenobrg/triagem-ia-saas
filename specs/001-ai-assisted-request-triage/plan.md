@@ -1,105 +1,97 @@
 # Plano técnico — Spec 001
 
-> **Para estudar:** este plano registra uma solução proposta para comparar com alternativas. Em cada etapa, justifique a escolha com uma falha ou regra observável; “usar RabbitMQ” ou “usar IA” sozinho não é evidência de aprendizado. Nenhum componente está implementado.
+> **Para estudar:** este plano é uma proposta de abordagem, não um relato de sistema funcionando. Ao ler cada seção, pergunte qual teste provaria a afirmação e o que aconteceria se a dependência caísse no meio da operação.
 
-- **Estado:** proposta técnica pronta para revisão; aplicação ainda não existe.
-- **Restrição principal:** entregar vertical slices locais, cada um com comportamento, testes, documentação e demonstração.
-- **Spec:** [`spec.md`](spec.md) · **API:** [`api-contract.md`](api-contract.md) · **Modelo:** [`../../docs/architecture/domain-and-data.md`](../../docs/architecture/domain-and-data.md)
+- **Estado:** proposta; nada implementado, nenhum build verificado.
+- **Spec:** [Spec 001](spec.md) · contrato em [`api-contract.md`](api-contract.md) · execução em [`tasks.md`](tasks.md)
 
-## 1. Arquitetura alvo do MVP
+## 1. Visão de arquitetura e limites
 
-Monólito modular Spring Boot com PostgreSQL como fonte de verdade. Spring Modulith verifica dependências/ciclos entre módulos na build. RabbitMQ executa a triagem lenta, com outbox/inbox próprios porque controlar consistência e redelivery é objetivo de aprendizagem. CQRS é leve: comandos protegem invariantes; consultas otimizam DTOs de fila/detalhe no mesmo banco. Sem event sourcing ou banco de leitura separado.
+Monólito modular Java/Spring Boot, verificado por Spring Modulith ([ADR-0001](../../docs/architecture/decisions/ADR-0001-modular-monolith.md)). Regras de negócio e invariantes ficam no domínio e na aplicação; HTTP, ORM, RabbitMQ, Keycloak e SDK de IA são adaptadores de borda. CQRS é leve: comandos e consultas são separados no código, sem banco de leitura próprio nem consistência eventual interna.
 
-### Módulos e propriedade
+Frontend React/TypeScript consome a API documentada em OpenAPI. Tudo roda local via Docker Compose com PostgreSQL, RabbitMQ e Keycloak.
 
-| Módulo | Responsabilidade / dados próprios | Dependências permitidas |
+## 2. Módulos, ownership e dependências permitidas
+
+| Módulo | É dono de | Expõe | Pode depender de |
+| --- | --- | --- | --- |
+| `identity` | Workspace, membership, papel | Consulta de autorização (`workspaceId` + subject → papel ativo) | — |
+| `requests` | Solicitação, texto original, complemento, estado, versão, histórico | Comandos de criação, transição, classificação manual e consultas autorizadas | `identity` |
+| `triage` | Tentativa de triagem, sugestão, decisão de revisão, telemetria de IA | Resultado validado de triagem; porta `TriageProvider` | `identity`, API pública de `requests` |
+| `messaging` | Outbox, inbox, publicação e consumo | Publicação de evento e registro de consumo idempotente | — |
+| `api` | Controllers, DTOs, tratamento de erro, OpenAPI | Nada para outros módulos | todos os anteriores |
+
+Nenhum módulo lê tabela ou classe interna de outro. `triage` nunca grava direto no estado da solicitação: pede a transição pela API pública de `requests`, que valida invariantes e versão.
+
+## 3. Contratos e modelo de dados
+
+Tabelas principais (nomes propostos): `workspace`, `membership`, `request`, `request_text` (origem imutável), `request_clarification`, `request_history`, `triage_attempt`, `triage_suggestion`, `review`, `idempotency_key`, `outbox_message`, `inbox_message`, `ai_budget_reservation`. Chaves e índices são *tenant-aware*: toda FK que cruza agregados carrega `workspace_id` e as consultas filtram por ele. Migrações com Flyway, versionadas e irreversíveis por edição.
+
+`request.version` é a única fonte de concorrência otimista exposta na API. Idempotência guarda hash da chave e hash do corpo canonicalizado, com escopo `(subject, workspace, operação)` e retenção mínima de 24 horas.
+
+Detalhe do modelo em [Domínio e dados](../../docs/architecture/domain-and-data.md). Contrato HTTP em [`api-contract.md`](api-contract.md).
+
+## 4. Consistência, concorrência e idempotência
+
+Criar solicitação grava, na mesma transação: linha de `request`, texto original, histórico e `outbox_message` com `TriageRequested.v1` ([ADR-0002](../../docs/architecture/decisions/ADR-0002-outbox-rabbitmq.md)). O dispatcher lê a outbox em lotes limitados com lease, publica com `mandatory=true` e publisher confirms e só marca como publicada após confirmação sem `basic.return`.
+
+O worker consome, registra inbox único por `(consumidor, eventId)`, reabre os dados pelo `requestId`, confere o `workspaceId` do evento e chama o provedor. O ack ocorre somente depois de persistir o resultado ou a falha recuperável. Toda escrita de estado compara `expectedVersion`; perda de corrida devolve `409` sem efeito.
+
+Corrida entre decisão humana e worker: a decisão humana incrementa a versão; o worker, ao tentar aplicar o resultado, encontra versão divergente e marca a tentativa como `OBSOLETE`.
+
+## 5. Falhas, timeout, retry, DLQ e recuperação
+
+- Erro transitório conhecido (`429`, `5xx`, conexão): retry persistido com `next_attempt_at`, atraso crescente e limite de tentativas.
+- Mensagem inválida, versão de schema desconhecida ou poison: DLQ, sem inferir payload.
+- Timeout após envio ao provedor: tentativa vira `OUTCOME_UNKNOWN`; não há retry automático, pois a chamada pode ter sido cobrada. Reenvio exige confirmação humana explícita.
+- Broker indisponível: a criação continua funcionando (outbox acumula) e a classificação manual com motivo mantém o atendimento vivo.
+- Replay é comando explícito, autorizado, idempotente e auditado.
+
+Entrega é *at-least-once*. Nada no sistema promete exactly-once, e idempotência de domínio é o que protege o efeito.
+
+## 6. Segurança, privacidade, observabilidade e custo
+
+Resource Server OIDC valida issuer, audience, assinatura e expiração; papel de produto vem de `identity`, nunca do token. Autorização é checada por rota e repetida na consulta. Logs estruturados levam request, event e correlation ID, sem texto de solicitação, prompt ou segredo. Métricas: idade da outbox, backlog, redeliveries, tentativas por status, latência e custo de IA, DLQ.
+
+IA: porta `TriageProvider` com fake determinístico default. O adapter OpenAI só é ativado por `OPENAI_LIVE_ENABLED=true`, com chave fora do repositório, reserva de custo antes da chamada, reconciliação depois e bloqueio ao atingir US$5/mês ([ADR-0003](../../docs/architecture/decisions/ADR-0003-human-reviewed-ai.md)). Testes nunca fazem chamada de rede.
+
+## 7. Testes e evidências por requisito
+
+| Requisito | Evidência pretendida | Executado? |
 | --- | --- | --- |
-| `identity` | Resolver principal autenticado e acesso a workspace/membership/papel | Adaptador OIDC e porta consultada pelos casos de uso |
-| `requests` | Aggregate de solicitação, complemento do requester, estados, auditoria, fila e comandos manuais | Porta de autorização; publica intenção de triagem via API local/outbox |
-| `triage` | Primeira análise, rota humano/complemento, tentativas, sugestão, validação, aprovação, orçamento e porta do provedor | `requests` por API pública, não por tabela interna |
-| `messaging` | Outbox, dispatcher Rabbit, inbox, retry, DLQ e métricas | Contratos de evento versionados e casos de uso públicos |
-| `api` | REST, validação de transporte, mapeamento de erros e OpenAPI | APIs públicas de aplicação |
+| `FR-001`–`FR-004` | Testes de integração de autenticação e autorização negativa por papel e workspace | Não |
+| `FR-005` | Teste de repetição de chave com corpo igual e divergente | Não |
+| `FR-006`–`FR-008`, `NFR-004` | Testes de domínio de transição e teste de concorrência com PostgreSQL real | Não |
+| `FR-009`–`FR-010` | Teste de classificação manual com bypass e verificação de histórico | Não |
+| `FR-011`–`FR-014`, `FR-023`–`FR-024` | Testes com fake cobrindo rota humana, clarificação única, incerteza e falha | Não |
+| `FR-015`–`FR-016` | Teste de reserva de orçamento concorrente e inspeção de log sem segredo | Não |
+| `FR-017`, `NFR-006` | Execução do dataset sintético com relatório de métricas e limitações | Não |
+| `FR-018`–`FR-022` | Testes de outbox, unroutable, redelivery, DLQ e crash em pontos definidos | Não |
+| `NFR-001`, `NFR-005` | Clone limpo executado por outra pessoa; restauração de backup em banco vazio | Não |
+| `NFR-002`–`NFR-003`, `NFR-007` | Testes negativos multi-workspace, inspeção de logs e teste de modularidade no CI | Não |
 
-Cada módulo guarda internals privados e expõe tipos/casos de uso mínimos. Spring Modulith verifica ausência de ciclos, acesso a internals e dependências pretendidas: [verificação oficial](https://docs.spring.io/spring-modulith/reference/verification.html). Não criar módulo knowledge no MVP.
+Nenhuma linha acima foi verificada: a coluna só muda com comando executado e resultado anexado ao PR.
 
-## 2. Stack e ambiente local
+## 8. Entrega em fatias, rollback e operação
 
-- Java LTS compatível com a versão Spring Boot escolhida na implementação; Maven Wrapper versionado.
-- Spring Boot: Web, Validation, Security OAuth2 Resource Server, Data/JDBC conforme decisão de implementação, Actuator e Spring Modulith.
-- PostgreSQL + Flyway. Restrições e chaves compostas tenant-aware onde apropriado; aplicação continua obrigada a autorizar cada operação.
-- RabbitMQ com exchange/queue duráveis, mensagens persistentes, routing key versionada, DLQ e TTL/parking queue de retry quando viável.
-- Keycloak local via realm importado de fixture sintética; React + TypeScript; Docker Compose; CI com build, testes e verificação de módulos.
-- Configuração `.env.example` sem valores secretos. `.env`, tokens, chaves e dump local ficam ignorados pelo Git.
+1. Esqueleto reproduzível: Maven Wrapper, app modular, teste de arquitetura, health check, CI.
+2. Identidade: Compose com Keycloak, realm sintético, Resource Server, membership e papéis.
+3. Domínio manual: solicitação, estados, versão, classificação manual, histórico, isolamento.
+4. Interface mínima: criação pelo requester e fila do agente.
+5. Mensageria: outbox, dispatcher, topologia, consumidor idempotente, DLQ e retry.
+6. IA fake: porta, validação, rota humana e clarificação, revisão humana.
+7. IA real opt-in e avaliação em dataset sintético.
 
-Compose sobe PostgreSQL, RabbitMQ, Keycloak, API e UI com health checks e comando/documentação de bootstrap. Configurar OIDC issuer/audience externamente. Spring Resource Server valida assinatura, issuer, expiração e audience; membership/role é consultado pela aplicação e não inferido de claim do navegador.
+Cada fatia sobe atrás de configuração (flag de IA, flag de triagem automática) e pode voltar à classificação manual sem perda de dados. Rollback de migração é feito por nova migração, não por edição de versão aplicada.
 
-## 3. Contratos do domínio e persistência
+## 9. Alternativas e trade-offs
 
-Implementar regras de transição como funções explícitas/testáveis do aggregate/caso de uso. Escritas levam `expectedVersion`; uma atualização condicional incrementa versão e impede duas revisões concorrentes. Cada operação de negócio e auditoria correspondente ocorre na mesma transação.
+- **Microserviços desde o início:** rejeitado; multiplicaria operação antes de haver domínio estável ([ADR-0001](../../docs/architecture/decisions/ADR-0001-modular-monolith.md)).
+- **Eventos publicados dentro da transação sem outbox:** rejeitado; broker fora da transação perde ou duplica intenção.
+- **Chamada de IA síncrona no request HTTP:** rejeitada nesta spec; acopla latência e custo do modelo ao usuário e dificulta retry controlado. A [Spec 003](../003-ai-chat-resolution/spec.md) usa chamada síncrona apenas na conversa, com regras próprias.
+- **Event sourcing:** rejeitado; histórico auditável resolve o requisito sem o custo conceitual.
+- **Decisão automática da IA:** proibida pela constituição e pela [ADR-0003](../../docs/architecture/decisions/ADR-0003-human-reviewed-ai.md).
 
-Esboço lógico, não esquema SQL final:
+## 10. Referências técnicas verificadas
 
-- `workspace`, `membership(workspace_id, subject, role, active)`.
-- `request(workspace_id,id,requester_subject,original_text,status,version,created_at,updated_at)`.
-- `request_audit(workspace_id,request_id,actor,action,from_state,to_state,version,correlation_id,created_at,metadata)`.
-- `triage_attempt(workspace_id,id,request_id,attempt_no,status,provider,model,safe_error_code,usage,cost,...)`.
-- `triage_suggestion(workspace_id,id,request_id,attempt_id,schema_version,prompt_version,category,urgency,summary,validation_status,...)`.
-- `request_clarification(workspace_id,id,request_id,question,answer,asked_at,answered_at,attempt_id)`; `requests` protege resposta/autoria, `triage` fornece pergunta pela API pública. Complemento é separado do texto original e nunca entra no evento.
-- `triage_review(workspace_id,id,request_id,suggestion_id,reviewer_subject,decision,edited_values,...)`.
-- `idempotency_record(scope_hash,key_hash,request_hash,response_ref,expires_at)`.
-- `outbox_event(event_id,event_type,schema_version,aggregate_id,workspace_id,payload,status,attempts,next_attempt_at,lease_until,...)`.
-- `inbox_event(consumer,event_id,processed_at,result_ref)` unique por `(consumer,event_id)`.
-- `ai_budget_period(period,limit_usd,reserved_usd,reported_usd,blocked)` e `ai_usage` com valores minimizados.
-
-Usar FK compostas `(workspace_id, request_id)` em tabelas dependentes para bloquear associação cruzada no banco. A autenticação e autorização continuam no caso de uso. Idempotency hash é calculado sobre canonicalização versionada do request; nunca guardar valor original da chave. Manter dados de request fora do evento e fora dos logs. Definir limites de texto/paginação na primeira implementação e refletir no OpenAPI.
-
-## 4. Fluxo assíncrono e falhas
-
-1. API valida token, membership, papel, payload e `Idempotency-Key`.
-2. Uma transação grava request `RECEIVED`, evento de auditoria, outbox `TriageRequested.v1` e resultado idempotente.
-3. Dispatcher reivindica lote pequeno por lease/lock, publica mensagem persistente com `mandatory=true` e `correlationId`.
-4. Registrar handlers de `basic.return` e publisher confirm. Confirmação sem retorno permite marcar publicado; retorno de não roteável mantém evento pendente com alerta/erro operacional. Não confundir broker confirm com roteamento.
-5. Worker valida envelope/versão, reinspeciona workspace/status pelo caso de uso do sistema e obtém lock/idempotência. Faz a primeira análise fora da transação de banco.
-6. Ao receber resposta, valida rota e campos: `HUMAN_REVIEW` grava sugestão e leva a `NEEDS_REVIEW`; `REQUEST_CLARIFICATION` grava pergunta e leva a `NEEDS_CLARIFICATION` somente na primeira rodada. Complemento do requester é gravado com nova outbox e reprocessado uma vez; nova falta de contexto, incerteza, saída inválida ou falha terminal leva a `NEEDS_REVIEW` sem sugestão. Inbox e efeito são atômicos no PostgreSQL. Se classificação humana venceu enquanto o worker processava, gravar tentativa `OBSOLETE` sem sugestão revisável nem transição do pedido; preservar metadados seguros de custo/uso da chamada já feita.
-7. Requester em `NEEDS_CLARIFICATION` pode pedir humano diretamente. Broker indisponível deixa outbox pendente; agent/admin pode fazer bypass manual explícito com motivo, e worker tardio não sobrescreve.
-8. Erro transitório conhecido (p.ex. 429 com retry-after ou indisponibilidade antes de envio) agenda retry limitado com `next_attempt_at`; erro permanente vai a DLQ e encaminha pedido ao humano. Erro de transporte depois do envio, sem saber se provedor concluiu, resulta em `OUTCOME_UNKNOWN`, sem retry automático, e pedido fica visível ao humano.
-9. Operador/agent autorizado pode iniciar reprocesso explícito, com aviso de possível duplicação/custo e nova tentativa auditada quando elegível.
-
-O delivery é at-least-once. Há janela inevitável entre efeito externo e persistência local: nenhuma chave de inbox elimina cobrança duplicada do provedor se o processo cair depois da resposta. Por isso timeout ambíguo é tratado como estado, não como retry cego. Retenção, reprocesso e remoção de mensagem devem ser documentados.
-
-## 5. IA, avaliação e orçamento
-
-Interface interna `TriageProvider` retorna rota limitada: `HUMAN_REVIEW` com category, urgency e summary, ou `REQUEST_CLARIFICATION` com uma question. Adapter fake fornece resultados determinísticos e não usa rede. Adapter OpenAI usa API de respostas com saída estruturada/JSON Schema estrito quando habilitado; o servidor valida domínio/schema mesmo assim. Resposta inválida ou incerta vai ao humano. Referência de formato: [Structured Outputs (OpenAI)](https://developers.openai.com/api/docs/guides/structured-outputs).
-
-Configuração live exige `OPENAI_LIVE_ENABLED=true`, `OPENAI_API_KEY`, `OPENAI_MODEL` fixado explicitamente e uso de dados sintéticos. Teto didático: US$5/mês no contador do app. Para chamadas concorrentes, reservar custo conservador antes do envio com preço e tokens máximos configurados, impedir overspend, reconciliar uso/custo reportado depois; bloquear chamada externa se preço/modelo não estiver configurado e encaminhar pedido ao humano sem sugestão. Configurar também limite de gasto no projeto OpenAI. Fake fica como opção padrão em dev/CI.
-
-Dataset inicial versionado em formato sem dados pessoais. Dois rótulos independentes e adjudicação documentada; separar exemplos de desenvolvimento e avaliação. Reportar matriz de roteamento humano/complemento, taxa de pedidos úteis retidos para complemento, macro-F1 por categoria, urgência (erro ordinal e matriz), schema-valid rate, latência e custo por item. Pergunta de clarificação e sumarização recebem rubric factual com amostra revisada manualmente. Resultado inicial vira baseline; só depois discutir limiar útil ao objetivo didático. Sem alegar que benchmark sintético prova desempenho em operação real.
-
-## 6. Segurança e observabilidade
-
-- `workspaceId` vem de rota, mas membership ativo é a prova de autorização. Toda query por ID filtra workspace; retorno para não autorizado não enumera.
-- Não aceitar role/workspace claims como autorização. Não persistir access tokens.
-- Segredos via env local ignorada/secret store temporário, jamais source, frontend ou log.
-- Não logar texto original, prompt completo ou output integral; IDs aleatórios, estado, erro seguro, tamanhos, latência, custo e correlation.
-- Métricas: backlog/idade outbox; returned/unroutable; publish confirm; redelivery; tempo de fila/processamento; tentativas, unknown, DLQ; cota reservada/consumida; taxa de schema válido.
-- Logs e métricas não carregam workspace name ou conteúdo livre; usar IDs técnicos com retenção curta.
-
-## 7. Entrega colaborativa e sequência didática
-
-Trabalhar em fatias verticais. Em cada fatia, definir driver e reviewer; alternar a cada incremento. Os dois implementam e revisam backend e frontend ao longo do projeto, com ao menos uma autoria e uma revisão de PR em cada camada por pessoa. O driver apresenta requisito, trade-off, evidência de teste e limitação; reviewer registra riscos e alternativa. PR identifica os requisitos e autoria individual sem trailer de coautoria.
-
-Sequência de aprendizagem: linguagem/invariantes e estados → boundaries/DDD → API e idempotência → OIDC/tenant → transação/concorrência → outbox/eventos/Rabbit/retry → adaptador IA/orçamento/avaliação → observabilidade, threat model e demo. A [Spec 002](../002-service-workflow/spec.md) pode começar após identidade, criação, classificação manual e auditoria; RabbitMQ/IA não bloqueiam o primeiro incremento de atendimento. DDD começa em linguagem ubíqua, bounded contexts e invariantes; CQRS separa intenção de alteração e leitura, sem impor complexidade de infraestrutura.
-
-## 8. Extensões futuras, separadas por especificação
-
-- **RAG:** somente após baseline sem retrieval. Nova spec deve cobrir corpus sintético, ingestão/reindex/deleção, filtro tenant antes da busca, referências verificáveis, prompt injection e métricas de retrieval/grounding. Pode então avaliar pgvector.
-- **MCP:** spec própria, opcional, read-only inicialmente, usuário OIDC propagado, workspace autorizado em toda ferramenta, limites, audit e sem SQL/shell.
-- **AWS:** sandbox temporário após demo local aceita; Terraform, orçamento revisto no dia, ingress restrito, secrets, alertas, backup/restore e teardown verificado. Sem dados reais/piloto.
-
-## Fontes técnicas
-
-- [Spring Modulith — Verifying Application Modules](https://docs.spring.io/spring-modulith/reference/verification.html)
-- [RabbitMQ — Publisher Confirms and Returns](https://www.rabbitmq.com/docs/publishers)
-- [OpenAI — Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
-- [Spring Security — OAuth 2.0 Resource Server JWT](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html)
-- [Keycloak — Getting Started with Docker](https://www.keycloak.org/getting-started/getting-started-docker)
+Nenhuma versão de Java, Spring Boot, Spring Modulith, Flyway ou cliente RabbitMQ foi fixada ainda. A dupla escolhe e registra versões compatíveis no primeiro PR técnico (T101), com a fonte consultada. Até lá, não afirmar compatibilidade.

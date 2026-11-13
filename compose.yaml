@@ -1,0 +1,94 @@
+# Material de estudo. Ambiente local completo do exercicio de triagem assistida.
+#
+# Tudo aqui e sintetico: realm, usuarios, senhas e dados. Nenhuma credencial real,
+# nenhuma configuracao endurecida para producao. Keycloak roda em start-dev e o Postgres
+# usa senha fixa visivel neste arquivo de proposito: e um ambiente descartavel de estudo.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: triagem-postgres
+    environment:
+      POSTGRES_DB: triagem
+      POSTGRES_USER: triagem
+      POSTGRES_PASSWORD: triagem-sintetico
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U triagem -d triagem"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: triagem-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: triagem
+      RABBITMQ_DEFAULT_PASS: triagem-sintetico
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # painel: http://localhost:15672 (triagem / triagem-sintetico)
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: triagem-keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin-sintetico
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_PORT: "8080"
+      # O token e emitido com este issuer. O backend valida o issuer por este valor e busca
+      # as chaves pela rede interna (ver APP_AUTH_* no servico backend).
+      KC_HOSTNAME: http://localhost:8081
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./infra/keycloak/realm-triagem.json:/opt/keycloak/data/import/realm-triagem.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    build:
+      context: ./backend
+    image: triagem-backend:dev
+    container_name: triagem-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/triagem
+      SPRING_DATASOURCE_USERNAME: triagem
+      SPRING_DATASOURCE_PASSWORD: triagem-sintetico
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: triagem
+      SPRING_RABBITMQ_PASSWORD: triagem-sintetico
+      # Issuer esperado no token (externo) e chaves buscadas pela rede do Compose (interno).
+      APP_AUTH_ISSUER: http://localhost:8081/realms/triagem
+      APP_AUTH_JWK_SET_URI: http://keycloak:8080/realms/triagem/protocol/openid-connect/certs
+      APP_AUTH_AUDIENCE: triagem-backend
+      # Limites da Spec 003: valores propostos, ainda sem evidencia (T3001).
+      APP_CONVERSATION_MAX_ASSISTANT_TURNS: "10"
+      APP_CONVERSATION_RESOLVED_CONFIDENCE_THRESHOLD: "0.70"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

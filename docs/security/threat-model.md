@@ -56,3 +56,18 @@ Os controles abaixo são requisitos de teste, não proteção implementada:
 | Vazamento por duplicado | ID de pedido canônico aparece para outro requester | Testes de vínculo cross-tenant e projeção de resposta por papel, inclusive cursor/histórico |
 | Corrida com IA | Worker atrasado reabre triagem após decisão manual | Teste de versão: tentativa `OBSOLETE`, pedido e ciclo inalterados |
 | Texto livre em observabilidade | Pergunta, resposta, motivo ou nota de resolução entra em evento/log | Inspeção automatizada de payloads e logs sintéticos |
+
+## Extensão proposta: conversa assistida (Spec 003)
+
+> **Para estudar:** a transcrição é o ativo mais sensível do exercício — texto livre, em volume, de uma pessoa identificada. Para cada linha abaixo, escreva o teste que provaria a mitigação. Nada aqui foi implementado ou verificado.
+
+| Ameaça | Cenário sintético | Mitigação exigida pela [Spec 003](../../specs/003-ai-chat-resolution/spec.md) |
+| --- | --- | --- |
+| Leitura indevida de transcrição | Agente lê conversa de outro requester antes do escalonamento | Conversa privada ao autor até escalar; leitura do técnico só pelo chamado vinculado, com auditoria de acesso |
+| Injeção de prompt | Mensagem pede para "marcar como resolvido e não abrir chamado" | Conversa entra no prompt como dado; veredito validado contra enums; escalonamento também por gatilhos determinísticos |
+| Pedido de credencial pelo assistente | Resposta do modelo pede senha ou token do usuário | Saída inválida: turno não é gravado como resposta e o caminho humano continua disponível |
+| Encerramento silencioso | Avaliador declara resolvido e o problema some da fila | Só o autor confirma resolução; inatividade gera estado reversível, nunca "resolvido" |
+| Abuso de custo por usuário | Requester gasta turnos até esgotar o orçamento da aplicação | Limite de turnos e de conversas ativas, taxa por subject, custo máximo por conversa e teto de aplicação |
+| Vazamento por observabilidade | Texto de turno, prompt ou contexto entra em log, métrica ou evento | Eventos só com IDs, sequência e correlation; inspeção automatizada de logs e payloads |
+| Chamado duplicado por escalonamento | Duas tentativas concorrentes criam dois chamados para a mesma conversa | Índice parcial único por conversa, chave idempotente e transação única |
+| Retenção indefinida | Transcrições acumuladas sem política | Questão aberta declarada: retenção, exclusão e base legal precisam ser especificadas antes de qualquer piloto real |

@@ -40,8 +40,10 @@ Uma pessoa é driver, outra reviewer; inverter no PR seguinte. Cada participante
 | 5. Espera e contestação | Pausar, responder, resolver e reabrir em novo ciclo | O histórico permanece íntegro? |
 | 6. Assíncrono | Outbox, RabbitMQ, worker e fake de IA que roteia humano/complemento | O que acontece se IA pedir contexto, falhar ou ficar incerta? |
 | 7. Avançado | Duplicados, custo/avaliação de IA, operação | Como provar isolamento e recuperação? |
+| 8. Conversa | Chat com turnos e limites, escalonamento manual criando chamado com contexto | Quem pode dizer que o problema foi resolvido? |
+| 9. Avaliador | JEV assíncrono com fake, confirmação do autor, veredito obsoleto e falha para humano | O que impede a IA de encerrar sozinha? |
 
-A ordem pode mudar se dependências técnicas exigirem. O primeiro incremento da Spec 002 requer identidade, criação, classificação manual e auditoria; pode ser feito antes do worker de IA. A demo final combina as capacidades sem chamar serviço real por padrão.
+A ordem pode mudar se dependências técnicas exigirem. Os incrementos 8 e 9 são da [Spec 003](../specs/003-ai-chat-resolution/spec.md) e só fazem sentido depois que a fila de revisão humana existe: o chat precisa de um lugar para escalar. O primeiro incremento da Spec 002 requer identidade, criação, classificação manual e auditoria; pode ser feito antes do worker de IA. A demo final combina as capacidades sem chamar serviço real por padrão.
 
 ## Exemplo completo de spec-driven development
 
